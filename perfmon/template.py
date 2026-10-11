@@ -3,6 +3,7 @@ import re
 import time
 import uuid
 from collections.abc import Callable, Mapping
+from functools import lru_cache
 from datetime import UTC, datetime
 from typing import Any
 
@@ -35,8 +36,16 @@ def _lookup(name: str, context: Mapping[str, Any]) -> Any:
     return value
 
 
+def placeholders(template: str) -> set[str]:
+    """The names a template needs values for (built-ins excluded)."""
+    return {match.group(1) for match in _PLACEHOLDER.finditer(template)} - BUILTINS.keys()
+
+
 def _substitute(
-    template: str, context: Mapping[str, Any], null_text: Callable[[re.Match[str]], str] | None
+    template: str,
+    context: Mapping[str, Any],
+    null_text: Callable[[re.Match[str]], str] | None,
+    value_text: Callable[[re.Match[str], Any], str] | None = None,
 ) -> tuple[str, list[str]]:
     """Fill in the placeholders; return the text and the names that resolved to null."""
     missing: list[str] = []
@@ -51,7 +60,7 @@ def _substitute(
         if value is None:
             nulls.append(name)
             return null_text(match) if null_text else ""
-        return _to_text(value)
+        return value_text(match, value) if value_text else _to_text(value)
 
     result = _PLACEHOLDER.sub(replace, template)
     if missing:
@@ -99,13 +108,22 @@ def render_mapping(mapping: Mapping[str, Any], context: Mapping[str, Any]) -> di
 
 
 def render_json(template: str, context: Mapping[str, Any]) -> str:
-    """Render a JSON body; a key or list item whose whole value is a null placeholder is removed."""
+    """Render a JSON document.
+
+    A value placed inside a string is escaped, so quotes and line breaks in it stay valid JSON.
+    A key or list item whose whole value is a null placeholder is removed.
+    """
+    in_string = _placeholders_inside_strings(template)
+
+    def value_text(match: re.Match[str], value: Any) -> str:
+        text = _to_text(value)
+        return json.dumps(text, ensure_ascii=False)[1:-1] if match.start() in in_string else text
 
     def null_text(match: re.Match[str]) -> str:
         quoted = template[match.start() - 1 : match.start()] == '"' and template[match.end() : match.end() + 1] == '"'
         return _OMIT if quoted else f'"{_OMIT}"'
 
-    result, nulls = _substitute(template, context, null_text)
+    result, nulls = _substitute(template, context, null_text, value_text)
     if not nulls:
         return result
     problem = f"{_names(nulls)} is null, which can only leave out a whole JSON value"
@@ -127,3 +145,27 @@ def _prune(value: Any) -> Any:
     if isinstance(value, list):
         return [kept for item in value if (kept := _prune(item)) is not _MISSING]
     return value
+
+
+@lru_cache(maxsize=None)
+def _placeholders_inside_strings(template: str) -> frozenset[int]:
+    """Start offsets of the placeholders that sit inside a JSON string literal."""
+    spans = {match.start(): match.end() for match in _PLACEHOLDER.finditer(template)}
+    found = set()
+    inside = escaped = False
+    position = 0
+    while position < len(template):
+        if position in spans:
+            if inside:
+                found.add(position)
+            position = spans[position]
+            continue
+        character = template[position]
+        if escaped:
+            escaped = False
+        elif character == "\\":
+            escaped = inside
+        elif character == '"':
+            inside = not inside
+        position += 1
+    return frozenset(found)

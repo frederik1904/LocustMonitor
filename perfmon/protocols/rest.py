@@ -15,6 +15,15 @@ _JSON = "application/json"
 
 
 class RestHandler:
+    def lint(self, endpoint: Endpoint) -> list[str]:
+        problems = []
+        for expression in endpoint.extract.values():
+            try:
+                _compile(expression)
+            except ExtractError as error:
+                problems.append(str(error))
+        return problems
+
     def prepare(self, endpoint: Endpoint, context: Mapping[str, Any]) -> PreparedRequest:
         headers = render_mapping(endpoint.headers, context)
         body = None

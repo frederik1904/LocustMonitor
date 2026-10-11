@@ -63,7 +63,7 @@ def test_failures_explain_themselves(project: Path, host: str):
     failures = {o.scenario: o.failure for o in check_project(load_project(project), host) if not o.passed}
     assert failures["flow"] == "expected status 200, got 404"
     assert "404" in failures["unchecked"]
-    assert failures["broken"] == "endpoint 'broken' in scenario 'broken': no value for: nope"
+    assert failures["broken"] == "step 'broken' in scenario 'broken': no value for: nope"
 
 
 def test_unreachable_host_is_a_failure_not_a_crash(project: Path):

@@ -36,6 +36,7 @@ class Endpoint:
 
 @dataclass(frozen=True)
 class Step:
+    name: str  # unique within the scenario
     endpoint: Endpoint
     vars: dict[str, Any] = field(default_factory=dict)
 

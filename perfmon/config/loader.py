@@ -7,6 +7,8 @@ from pydantic import BaseModel, ValidationError
 from perfmon.config.models import ConfigError, DataBinding, Endpoint, Project, Scenario, Step
 from perfmon.config.schema import BodyMatch, DataSpec, EndpointFile, ScenarioFile
 
+_YAML_SUFFIXES = (".yaml", ".yml")
+
 
 def load_project(root: str | Path) -> Project:
     """Read endpoints/ and scenarios/ under root. Endpoints only run as steps of a scenario."""
@@ -21,17 +23,24 @@ def load_project(root: str | Path) -> Project:
         if folder.is_dir()
     }
 
+    scenario_dir = root / "scenarios"
     scenarios: dict[str, Scenario] = {}
-    for file in sorted((root / "scenarios").glob("*.yaml")):
+    for file in sorted(p for p in scenario_dir.glob("*") if p.suffix in _YAML_SUFFIXES and p.is_file()):
+        if file.stem in scenarios:
+            raise ConfigError(f"{file}: there is more than one scenario file named '{file.stem}'")
         scenarios[file.stem] = _load_scenario(file, root, endpoints)
+    if not scenarios:
+        raise ConfigError(f"{scenario_dir}: no scenario files (*.yaml) found, so there is nothing to run")
 
     return Project(endpoints, scenarios)
 
 
 def _load_endpoint(folder: Path) -> Endpoint:
-    meta_path = folder / "meta.yaml"
-    if not meta_path.is_file():
-        raise ConfigError(f"{meta_path}: file not found")
+    candidates = [folder / f"meta{suffix}" for suffix in _YAML_SUFFIXES if (folder / f"meta{suffix}").is_file()]
+    if len(candidates) != 1:
+        problem = "file not found" if not candidates else "there is also a meta.yml; keep one of them"
+        raise ConfigError(f"{folder / 'meta.yaml'}: {problem}")
+    meta_path = candidates[0]
     meta = _parse(EndpointFile, meta_path)
     request_file = _find_sibling(folder, "request")
     response_file = _find_sibling(folder, "response")
@@ -58,14 +67,15 @@ def _load_endpoint(folder: Path) -> Endpoint:
 def _load_scenario(file: Path, root: Path, endpoints: dict[str, Endpoint]) -> Scenario:
     spec = _parse(ScenarioFile, file)
 
-    steps = []
+    steps: list[Step] = []
     for step in spec.steps:
         if step.endpoint not in endpoints:
             known = ", ".join(sorted(endpoints))
             raise ConfigError(f"{file}: unknown endpoint '{step.endpoint}' (available: {known})")
         endpoint = endpoints[step.endpoint]
+        name = _step_name(step.name, endpoint.name, {earlier.name for earlier in steps}, file)
         # Most specific wins: endpoint < scenario < step.
-        steps.append(Step(endpoint, endpoint.vars | spec.vars | step.vars))
+        steps.append(Step(name, endpoint, endpoint.vars | spec.vars | step.vars))
 
     return Scenario(
         name=file.stem,
@@ -73,6 +83,19 @@ def _load_scenario(file: Path, root: Path, endpoints: dict[str, Endpoint]) -> Sc
         data=_data_file(spec.data, file, root),
         weight=spec.weight,
     )
+
+
+def _step_name(given: str | None, endpoint: str, taken: set[str], source: Path) -> str:
+    """The step's label in reports: as given, else the endpoint name, numbered when it repeats."""
+    if given is not None:
+        if given in taken:
+            raise ConfigError(f"{source}: two steps are named '{given}'")
+        return given
+    name, count = endpoint, 1
+    while name in taken:
+        count += 1
+        name = f"{endpoint}#{count}"
+    return name
 
 
 def _data_file(data: DataSpec | None, source: Path, root: Path) -> DataBinding | None:

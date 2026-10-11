@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from perfmon.template import TemplateError, render, render_json, render_mapping, render_optional
+from perfmon.template import TemplateError, placeholders, render, render_json, render_mapping, render_optional
 
 
 def test_substitutes_names_and_dotted_paths():
@@ -58,3 +58,18 @@ def test_render_json_leaves_the_text_alone_without_nulls():
 def test_render_json_rejects_null_inside_a_longer_value(template: str):
     with pytest.raises(TemplateError, match="a is null, which can only leave out a whole JSON value"):
         render_json(template, {"a": None})
+
+
+@pytest.mark.parametrize("value", ['He said "hi"', "line1\nline2", "C:\\temp\\new", "tab\there", "blåbær ☕"])
+def test_render_json_escapes_text_placed_inside_a_string(value: str):
+    rendered = render_json('{"title": "{{v}}", "note": "about {{v}}!", "raw": {{n}}}', {"v": value, "n": "5"})
+    assert json.loads(rendered) == {"title": value, "note": f"about {value}!", "raw": 5}
+
+
+def test_render_json_escapes_non_text_values_inside_a_string_too():
+    rendered = render_json('{"a": "tags={{tags}}", "b": {{tags}}, "c": "\\"{{n}}\\""}', {"tags": ["x"], "n": 1})
+    assert json.loads(rendered) == {"a": 'tags=["x"]', "b": ["x"], "c": '"1"'}
+
+
+def test_placeholders_lists_the_names_a_template_needs():
+    assert placeholders("/{{a}}/{{ b.c }}?x={{a}}&t={{$uuid}}") == {"a", "b.c"}

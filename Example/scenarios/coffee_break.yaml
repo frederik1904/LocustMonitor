@@ -1,7 +1,11 @@
-# The same endpoint three times with different parameters.
+# The same endpoint three times with different parameters. Each step has its own name,
+# so each gets its own line in the statistics (unnamed repeats would be find_coffee#2, #3).
 steps:
-  - find_coffee
   - endpoint: find_coffee
+    name: hot_by_id
+  - endpoint: find_coffee
+    name: iced_by_id
     vars: { temperature: iced, coffee_id: 1 }
   - endpoint: find_coffee
+    name: all_iced
     vars: { temperature: iced, coffee_id: null }   # null leaves ?id= out: every iced coffee

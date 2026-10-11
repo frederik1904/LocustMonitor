@@ -2,7 +2,7 @@
 # delete_coffee gets coffee_id from create_coffee's response, not from these vars.
 vars:
   new_id: 990001
-  title: Perfmon example
+  title: Perfmon "example" coffee   # quotes are escaped in the JSON body
   ingredients: [Espresso, Steamed milk]
   origin: null            # null leaves the "origin" key out of the body
 steps:

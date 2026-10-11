@@ -33,7 +33,7 @@ functional endpoint checks, driven by folders of YAML and request/response files
 | 3 | `check` mode (functional endpoint testing) | Done |
 | 4 | Chaining (`extract`) and CSV data source | Done |
 | 5 | Response validation (`subset` / `exact`) | Done |
-| 5a | Review fixes: correctness of results | Todo |
+| 5a | Review fixes: correctness of results | Done |
 | 5b | Review cleanup: code quality | Todo |
 | 6 | Project file, `perfmon run`, `baseline` and `limit` modes | Todo |
 | 7 | Reporter interface and Excel reporter | Todo |
@@ -82,26 +82,21 @@ functional endpoint checks, driven by folders of YAML and request/response files
 - [x] Editor support: `validate.body` description updated; schemas regenerated.
 - [ ] Later, if needed: `body: schema` (JSON Schema), and a way to match list items in any order.
 
-### 5a. Review fixes: correctness of results
+### 5a. Review fixes: correctness of results (done)
 
-Found in the code review after step 5. Do these before step 6; they affect whether results can be trusted.
+Found in the code review after step 5.
 
-- [ ] **JSON-escape text values in JSON bodies.** A value with a double quote or line break currently
-      produces invalid JSON (`"title": "{{title}}"` with `He said "hi"`). Escape strings when the
-      placeholder sits inside quotes in a JSON file; applies to request and response files.
-- [ ] **A project with no scenarios is an error.** Today `perfmon check` prints "0 passed" and exits 0.
-- [ ] **Accept `.yml` as well as `.yaml`** for scenario files and `meta`; today a `.yml` scenario is
-      silently ignored.
-- [ ] **Distinct stats names for repeated endpoints.** The same endpoint used twice in a scenario shares
-      one stats line (`coffee_break/find_coffee` blends three different requests). Add an optional
-      `name:` on a step and an automatic `#2`, `#3` suffix when none is given.
-- [ ] **Load-time placeholder check** (moved here from step 8): every `{{placeholder}}` in path, query,
-      headers, request and response files must be supplied by vars, a CSV header or an earlier
-      `extract`. Today a missing variable raises on every iteration of a load run and is not counted
-      as a failed request.
-- [ ] **Load-time check of JSONPath syntax** in `extract` (moved here from step 8).
-- [ ] Example: a step `name:` in `coffee_break`; a value with quotes in `coffee_lifecycle`.
-- [ ] Editor support: description for step `name`; regenerate the schemas.
+- [x] **Text values are JSON-escaped in JSON files** when the placeholder sits inside a string, in
+      request and response files, so quotes and line breaks stay valid JSON.
+- [x] **A project with no scenarios is an error.**
+- [x] **`.yml` is accepted** like `.yaml` for scenario files and `meta`; having both spellings is an error.
+- [x] **Distinct stats names for repeated endpoints:** optional `name:` on a step; without it a repeated
+      endpoint is numbered `#2`, `#3`.
+- [x] **Load-time placeholder check:** every `{{placeholder}}` in path, query, headers, request and
+      response files must be supplied by vars, a CSV column or an earlier `extract`.
+- [x] **Load-time check of JSONPath syntax** in `extract`.
+- [x] Example: step names in `coffee_break`; a title with quotes in `coffee_lifecycle`.
+- [x] Editor support: description for step `name`; `.yml` patterns in the IntelliJ mapping; schemas regenerated.
 
 ### 5b. Review cleanup: code quality
 
@@ -212,6 +207,9 @@ Depends on `query:` (step 4) and body validation (step 5).
 - **A missing variable is an error**, not an empty string. *Why:* silent blanks produce misleading test results.
 - **Non-string values are written as JSON** (`true`, `null`, `500`). *Why:* `"qty": {{qty}}` must yield valid JSON.
 - **Built-ins:** `{{$uuid}}`, `{{$timestamp}}`, `{{$isotime}}`.
+- **In JSON files, a value inside a string is escaped; a bare value is inserted as-is.** *Why:*
+  `"title": "{{title}}"` must survive quotes in the title, while `"qty": {{qty}}` must stay a number
+  even when the value comes from a CSV as text.
 - **Null means omit.** A null variable drops the JSON key, header or query parameter
   it fills, instead of sending `null`. *Why:* optional fields are common and no current endpoint needs an
   explicit null; an empty CSV cell can then mean "leave this out for this row". A literal `null` typed in
@@ -247,7 +245,8 @@ Depends on `query:` (step 4) and body validation (step 5).
 
 - **One Locust user class per scenario**, named after it and weighted by `weight`. *Why:* `locust flow ping`
   selects scenarios, and Locust's own weighting handles the mix.
-- **Stats names are `scenario/endpoint`.** *Why:* the same endpoint in two scenarios is measured separately.
+- **Stats names are `scenario/step`.** A step is named after its endpoint unless it has a `name:`; repeats
+  are numbered. *Why:* the same endpoint in two scenarios, or twice in one, is measured separately.
 - **`PERFMON_ROOT` is an environment variable.** *Why:* Locust imports the locustfile
   before parsing its own arguments, and user classes must exist at import.
 - **Content-Type is guessed from the request file extension** unless `meta.yaml` sets it.
@@ -257,6 +256,11 @@ Depends on `query:` (step 4) and body validation (step 5).
 - **Without a `validate` block, Locust's default rule applies** (connection error or status >= 400 fails).
   With one, the block decides, so an expected 404 passes.
 - **The project is an installable package** (hatchling) so `perfmon` exists as a command.
+- **Commands open a project with `perfmon.project.open_project`**, which loads it and then verifies
+  placeholders and JSONPath syntax, reporting every problem at once. `config.loader.load_project` only
+  reads files. *Why:* the checks need the protocol handlers and CSV headers, which the config layer
+  should not depend on; and a missing variable found before the run costs nothing, while one found
+  during a load run raises on every iteration.
 - **Config errors exit with one line**, `Configuration error: <file>: <problem>`, instead of a traceback.
 
 ### Data and reporting

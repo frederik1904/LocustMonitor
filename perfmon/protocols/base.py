@@ -29,6 +29,10 @@ class HttpResponse(Protocol):
 class ProtocolHandler(Protocol):
     """How one API style (REST, SOAP, GraphQL) builds requests and reads responses."""
 
+    def lint(self, endpoint: Endpoint) -> list[str]:
+        """Problems in the endpoint's definition that can be seen without sending anything."""
+        ...
+
     def prepare(self, endpoint: Endpoint, context: Mapping[str, Any]) -> PreparedRequest: ...
 
     def check(self, endpoint: Endpoint, response: HttpResponse, context: Mapping[str, Any]) -> str | None:

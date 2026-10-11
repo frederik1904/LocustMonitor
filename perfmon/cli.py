@@ -2,8 +2,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from perfmon.config.loader import load_project
 from perfmon.config.models import ConfigError
+from perfmon.project import open_project
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     try:
-        project = load_project(args.root)
+        project = open_project(args.root)
     except ConfigError as error:
         print(f"Configuration error: {error}", file=sys.stderr)
         return 2

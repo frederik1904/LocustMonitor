@@ -6,6 +6,12 @@ from typing import Any
 from perfmon.config.models import ConfigError
 
 
+def csv_columns(file: Path) -> list[str]:
+    """The column names in the file's header row."""
+    with file.open(newline="", encoding="utf-8-sig") as handle:
+        return next(csv.reader(handle), [])
+
+
 class CsvSource:
     """Rows of a CSV file in order, starting over at the end. An empty cell becomes None."""
 

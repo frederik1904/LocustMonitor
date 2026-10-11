@@ -98,7 +98,7 @@ def test_explicit_content_type_is_kept(project: Path):
 
 
 def test_missing_variable_names_the_endpoint_and_scenario(project: Path):
-    with pytest.raises(TemplateError, match="endpoint 'create_order' in scenario 'order': no value for: qty"):
+    with pytest.raises(TemplateError, match="step 'create_order' in scenario 'order': no value for: qty"):
         run_scenario(load_project(project).scenarios["order"], RecordingClient())
 
 

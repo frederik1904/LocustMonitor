@@ -116,6 +116,14 @@ class EndpointFile(_FileModel):
 
 class StepFile(_FileModel):
     endpoint: str = Field(description="Name of a folder under endpoints/.")
+    name: str | None = Field(
+        default=None,
+        min_length=1,
+        description=(
+            "Label for this step in reports, shown as scenario/name. Defaults to the endpoint name, "
+            "numbered (#2, #3) when the endpoint is used more than once in the scenario."
+        ),
+    )
     vars: dict[str, Any] = Field(default={}, description=_VARS)
 
 

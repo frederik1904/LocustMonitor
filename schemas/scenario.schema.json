@@ -51,6 +51,20 @@
           "title": "Endpoint",
           "type": "string"
         },
+        "name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Label for this step in reports, shown as scenario/name. Defaults to the endpoint name, numbered (#2, #3) when the endpoint is used more than once in the scenario.",
+          "title": "Name"
+        },
         "vars": {
           "additionalProperties": true,
           "default": {},

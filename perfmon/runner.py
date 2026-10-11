@@ -40,7 +40,7 @@ def run_scenario(scenario: Scenario, client: HttpClient, row: Mapping[str, Any] 
     """Send the steps of the scenario once, in order, stopping at the first one that fails.
 
     `row` is this iteration's data row, shared by every step. Returns the names of the
-    endpoints that were skipped because an earlier step failed.
+    steps that were skipped because an earlier step failed.
     """
     extracted: dict[str, Any] = {}
     for index, step in enumerate(scenario.steps):
@@ -51,7 +51,7 @@ def run_scenario(scenario: Scenario, client: HttpClient, row: Mapping[str, Any] 
         try:
             request = handler.prepare(endpoint, context)
         except TemplateError as error:
-            raise TemplateError(f"endpoint '{endpoint.name}' in scenario '{scenario.name}': {error}") from error
+            raise TemplateError(f"step '{step.name}' in scenario '{scenario.name}': {error}") from error
         with client.request(
             request.method,
             request.path,
@@ -63,7 +63,7 @@ def run_scenario(scenario: Scenario, client: HttpClient, row: Mapping[str, Any] 
         ) as response:
             passed = _settle(handler, endpoint, response, context, extracted)
         if not passed:
-            return tuple(later.endpoint.name for later in scenario.steps[index + 1 :])
+            return tuple(later.name for later in scenario.steps[index + 1 :])
     return ()
 
 
@@ -100,4 +100,4 @@ def _settle(
 
 def _stats_name(scenario: Scenario, step: Step) -> str:
     # Prefixed with the scenario so the same endpoint in two scenarios is measured separately.
-    return f"{scenario.name}/{step.endpoint.name}"
+    return f"{scenario.name}/{step.name}"

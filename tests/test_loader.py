@@ -112,3 +112,43 @@ def test_data_long_form_and_query(project: Path):
     loaded = load_project(project)
     assert loaded.scenarios["order_flow"].data == DataBinding(project / "data/users.csv", DataMode.RANDOM, 3)
     assert loaded.endpoints["search"].query == {"q": "{{term}}", "page": 2, "debug": None}
+
+
+def test_steps_are_named_after_their_endpoint_and_numbered_when_repeated(project: Path):
+    write(
+        project,
+        "scenarios/order_flow.yaml",
+        "steps:\n  - login\n  - login\n  - {endpoint: login, name: again}\n  - login\n  - create_order\n",
+    )
+    steps = load_project(project).scenarios["order_flow"].steps
+    assert [step.name for step in steps] == ["login", "login#2", "again", "login#3", "create_order"]
+
+
+def test_two_steps_with_the_same_given_name(project: Path):
+    write(project, "scenarios/order_flow.yaml", "steps:\n  - {endpoint: login, name: a}\n  - {endpoint: login, name: a}\n")
+    with pytest.raises(ConfigError, match="two steps are named 'a'"):
+        load_project(project)
+
+
+def test_yml_is_read_like_yaml(tmp_path: Path):
+    write(tmp_path, "endpoints/ping/meta.yml", "path: /ping\n")
+    write(tmp_path, "scenarios/flow.yml", "steps: [ping]\n")
+    assert sorted(load_project(tmp_path).scenarios) == ["flow"]
+
+    write(tmp_path, "scenarios/flow.yaml", "steps: [ping]\n")
+    with pytest.raises(ConfigError, match="more than one scenario file named 'flow'"):
+        load_project(tmp_path)
+
+
+def test_meta_in_both_spellings(tmp_path: Path):
+    write(tmp_path, "endpoints/ping/meta.yml", "path: /ping\n")
+    write(tmp_path, "endpoints/ping/meta.yaml", "path: /ping\n")
+    with pytest.raises(ConfigError, match="there is also a meta.yml"):
+        load_project(tmp_path)
+
+
+def test_a_project_without_scenarios_is_an_error(tmp_path: Path):
+    write(tmp_path, "endpoints/ping/meta.yaml", "path: /ping\n")
+    write(tmp_path, "scenarios/notes.txt", "not a scenario")
+    with pytest.raises(ConfigError, match="no scenario files"):
+        load_project(tmp_path)
