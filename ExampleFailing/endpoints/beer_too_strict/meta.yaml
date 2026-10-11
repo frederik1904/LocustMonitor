@@ -1,0 +1,5 @@
+# exact: the response must equal response.json, so every key left out of the file is reported.
+path: /beers/ale/1
+validate:
+  status: 200
+  body: exact

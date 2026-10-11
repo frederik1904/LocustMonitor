@@ -5,7 +5,7 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from perfmon.config.models import ConfigError, DataBinding, Endpoint, Project, Scenario, Step
-from perfmon.config.schema import DataSpec, EndpointFile, ScenarioFile
+from perfmon.config.schema import BodyMatch, DataSpec, EndpointFile, ScenarioFile
 
 
 def load_project(root: str | Path) -> Project:
@@ -35,6 +35,10 @@ def _load_endpoint(folder: Path) -> Endpoint:
     meta = _parse(EndpointFile, meta_path)
     request_file = _find_sibling(folder, "request")
     response_file = _find_sibling(folder, "response")
+    if meta.validation and meta.validation.body is not BodyMatch.NONE and response_file is None:
+        raise ConfigError(
+            f"{meta_path}: validate.body is '{meta.validation.body}' but the folder has no response file to compare with"
+        )
     return Endpoint(
         name=folder.name,
         path=meta.path,

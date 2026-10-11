@@ -3,3 +3,4 @@ method: DELETE
 path: /coffee/hot/{{coffee_id}}
 validate:
   status: 200
+  body: exact             # the API answers with an empty object and nothing else

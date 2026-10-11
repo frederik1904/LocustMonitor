@@ -45,7 +45,12 @@ class ValidationSpec(_FileModel):
     status: int | None = Field(default=None, description="Expected HTTP status code.")
     body: BodyMatch = Field(
         default=BodyMatch.NONE,
-        description="How the response body is compared with the response file: none, subset or exact.",
+        description=(
+            "How the response body is compared with the response file. "
+            "none: not at all. "
+            "subset: everything in the file must be in the response, which may have more keys and more list items. "
+            "exact: the response must equal the file."
+        ),
     )
 
 

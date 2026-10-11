@@ -48,7 +48,7 @@
         "body": {
           "$ref": "#/$defs/BodyMatch",
           "default": "none",
-          "description": "How the response body is compared with the response file: none, subset or exact."
+          "description": "How the response body is compared with the response file. none: not at all. subset: everything in the file must be in the response, which may have more keys and more list items. exact: the response must equal the file."
         }
       },
       "title": "ValidationSpec",

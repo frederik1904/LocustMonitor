@@ -120,6 +120,36 @@ def test_status_validation(project: Path, meta: str, status: int, verdicts: list
     assert client.verdicts == verdicts
 
 
+@pytest.mark.parametrize(
+    ("mode", "expected", "variables", "actual", "verdict"),
+    [
+        ("subset", '{"id": {{id}}, "name": "{{name}}"}', "{id: 7, name: IPA}", {"id": 7, "name": "IPA", "x": 1}, "success"),
+        ("subset", '{"id": {{id}}, "name": "{{name}}"}', "{id: 7, name: null}", {"id": 7, "name": "Stout"}, "success"),
+        ("subset", '{"id": {{id}}}', "{id: 7}", {"id": 8}, "body: $.id expected 7, got 8"),
+        ("exact", '{"id": {{id}}}', "{id: 7}", {"id": 7}, "success"),
+        ("exact", '{"id": {{id}}}', "{id: 7}", {"id": 7, "x": 1}, "body: $.x is not expected"),
+        ("none", '{"id": {{id}}}', "{id: 7}", {"id": 8}, "success"),
+        ("subset", '{"id": {{id}}}', "{id: 7}", None, "body: the response is not JSON"),
+        ("subset", '{"id": {{nope}}}', "{id: 7}", {"id": 7}, "response file of 'ping': no value for: nope"),
+        ("subset", '{"id": ', "{id: 7}", {"id": 7}, "body: the response file of 'ping' is not valid JSON"),
+    ],
+)
+def test_body_validation(project: Path, mode: str, expected: str, variables: str, actual, verdict: str):
+    write(project, "endpoints/ping/meta.yaml", f"path: /ping\nvars: {variables}\nvalidate: {{status: 200, body: {mode}}}\n")
+    write(project, "endpoints/ping/response.json", expected)
+    client = RecordingClient(bodies={"/ping": actual})
+    run_scenario(load_project(project).scenarios["ping"], client)
+    assert len(client.verdicts) == 1 and client.verdicts[0].startswith(verdict)
+
+
+def test_status_is_checked_before_the_body(project: Path):
+    write(project, "endpoints/ping/meta.yaml", "path: /ping\nvalidate: {status: 201, body: exact}\n")
+    write(project, "endpoints/ping/response.json", "{}")
+    client = RecordingClient(status_code=200)
+    run_scenario(load_project(project).scenarios["ping"], client)
+    assert client.verdicts == ["expected status 201, got 200"]
+
+
 @pytest.fixture
 def chain(tmp_path: Path) -> Path:
     write(tmp_path, "endpoints/login/meta.yaml", "method: POST\npath: /login\nextract: {token: $.auth.token, uid: '$.ids[0]'}\n")

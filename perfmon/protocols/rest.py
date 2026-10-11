@@ -1,3 +1,4 @@
+import json
 from collections.abc import Mapping
 from functools import lru_cache
 from typing import Any
@@ -5,7 +6,9 @@ from typing import Any
 from jsonpath_ng import JSONPath, parse
 
 from perfmon.config.models import Endpoint
+from perfmon.config.schema import BodyMatch
 from perfmon.protocols.base import ExtractError, HttpResponse, PreparedRequest
+from perfmon.protocols.json_compare import describe_differences
 from perfmon.template import render, render_json, render_mapping
 
 _JSON = "application/json"
@@ -31,11 +34,25 @@ class RestHandler:
             body=body,
         )
 
-    def check(self, endpoint: Endpoint, response: HttpResponse) -> str | None:
-        expected = endpoint.validation.status if endpoint.validation else None
-        if expected is not None and response.status_code != expected:
-            return f"expected status {expected}, got {response.status_code}"
-        return None
+    def check(self, endpoint: Endpoint, response: HttpResponse, context: Mapping[str, Any]) -> str | None:
+        validation = endpoint.validation
+        if validation is None:
+            return None
+        if validation.status is not None and response.status_code != validation.status:
+            return f"expected status {validation.status}, got {response.status_code}"
+        if validation.body is BodyMatch.NONE or endpoint.response is None:
+            return None
+        try:
+            # A null variable leaves its key out of the expectation, as it does in a request.
+            expected = json.loads(render_json(endpoint.response, context))
+        except ValueError as error:
+            return f"body: the response file of '{endpoint.name}' is not valid JSON ({error})"
+        try:
+            actual = response.json()
+        except ValueError:
+            return "body: the response is not JSON"
+        difference = describe_differences(expected, actual, exact=validation.body is BodyMatch.EXACT)
+        return f"body: {difference}" if difference else None
 
     def extract(self, endpoint: Endpoint, response: HttpResponse) -> dict[str, Any]:
         try:

@@ -1,0 +1,4 @@
+# The status is checked before the body.
+path: /beers/ale/0
+validate:
+  status: 200

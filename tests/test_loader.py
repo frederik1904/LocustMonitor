@@ -84,6 +84,7 @@ def test_step_vars_override_scenario_vars_override_endpoint_vars(project: Path):
         ("scenarios/bad.yaml", "steps: [login]\ndata: {file: data/users.csv, mode: sorted}\n", "data.mode: Input should be 'shared', 'scenario' or 'random'"),
         ("scenarios/bad.yaml", "steps: [login]\ndata: {file: data/users.csv, seed: 1}\n", "seed only applies to mode: random"),
         ("scenarios/bad.yaml", "weight: 2\n", "steps: Field required"),
+        ("endpoints/bad/meta.yaml", "path: /x\nvalidate: {body: exact}\n", "validate.body is 'exact' but the folder has no response file"),
         ("scenarios/bad.yaml", "steps: []\n", "steps: List should have at least 1 item"),
         ("endpoints/bad/meta.yaml", "path: /x\nmethod: FETCH\n", "method: Input should be 'GET'"),
         ("endpoints/bad/meta.yaml", "path: /x\nprotocol: soap\n", "protocol: Input should be 'rest'"),

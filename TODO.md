@@ -15,7 +15,8 @@ functional endpoint checks, driven by folders of YAML and request/response files
 
 - **Every feature ships with an example.** A step is not done until an example project uses the
   feature and it has been run (`perfmon check`, and a load run where relevant).
-- **Several example folders are fine.** `Example/` targets sampleapis.com; add another folder when a
+- **Several example folders are fine.** `Example/` targets sampleapis.com and must always pass;
+  `ExampleFailing/` fails on purpose to show the reports; add another folder when a
   feature needs a different kind of package (e.g. a SOAP or GraphQL API, or a local mock server for
   writes and failure cases). Each example folder has its own README.
 - **Keep the editor support up to date.** Whenever the file formats change:
@@ -31,7 +32,7 @@ functional endpoint checks, driven by folders of YAML and request/response files
 | 2 | REST handler, runner, user factory, locustfile | Done |
 | 3 | `check` mode (functional endpoint testing) | Done |
 | 4 | Chaining (`extract`) and CSV data source | Done |
-| 5 | Response validation (`subset` / `exact`) | Todo |
+| 5 | Response validation (`subset` / `exact`) | Done |
 | 6 | `baseline` and `limit` modes | Todo |
 | 7 | Reporter interface and Excel reporter | Todo |
 | 8 | Ergonomics and docs | Todo |
@@ -64,17 +65,20 @@ functional endpoint checks, driven by folders of YAML and request/response files
       mode (`get_beer`, `get_stout`, `random_beer`), null omission in `coffee_break` and `coffee_lifecycle`.
 - [x] Editor support: descriptions for `query` and the `data` forms; schemas regenerated.
 
-### 5. Validation
+### 5. Validation (done)
 
-- [x] `check(endpoint, response) -> failure message | None` on `ProtocolHandler` (status only so far).
-- [x] Send with `catch_response=True` so validation failures count as Locust failures.
-- [ ] Pass the context to `check` so the expected response can be rendered.
-- [x] `status`: compare the HTTP status (done in step 3).
-- [ ] `body: subset`: every key in `response.*` must be present and equal in the actual response.
-- [ ] `body: exact`: full equality.
-- [ ] Render `response.*` through the template engine so expected values can use variables.
-- [ ] Decide whether to add `body: schema` (JSON Schema) later.
-- [ ] Example: `get_beer` and `create_coffee` already declare `body: subset`; add one `body: exact` case and one deliberately failing case to show the report.
+- [x] `check(endpoint, response, context) -> failure message | None` on `ProtocolHandler`.
+- [x] Sent with `catch_response=True` so validation failures count as Locust failures.
+- [x] `status`: compare the HTTP status, before the body.
+- [x] `body: subset`: everything in `response.*` must be in the response; extra keys and extra trailing
+      list items are allowed.
+- [x] `body: exact`: full equality.
+- [x] `response.*` is rendered through the template engine; a null variable leaves its key unchecked.
+- [x] `body: subset` or `exact` without a response file is a load-time error.
+- [x] Example: `get_beer` and `create_coffee` (subset), `delete_coffee` (exact) in `Example/`;
+      failure reports in `ExampleFailing/`.
+- [x] Editor support: `validate.body` description updated; schemas regenerated.
+- [ ] Later, if needed: `body: schema` (JSON Schema), and a way to match list items in any order.
 
 ### 6. Modes (load shapes)
 
@@ -226,6 +230,12 @@ Depends on `query:` (step 4) and body validation (step 5).
 - **Single-process first.** The cursor sits behind `DataSource` so distributed runs can be added later.
 - **Excel first for reporting.** The LGTM transport question is deferred. *Why:* the strategy interface
   isolates it; only the two-hook shape has to be right now.
+- **Subset lists are compared from the start.** The expected items must match the first items of the
+  response in order; the response may have more after them. *Why:* it is the list equivalent of "may
+  have extra keys" and lets a test pin down the first entries of a long list.
+- **Differences name their place** (`$.rating.average expected 5, got 4.4`), the first three are listed.
+  *Why:* a failure should say what to fix without opening the response.
+- **Booleans never equal numbers** in comparisons, although `true == 1` in Python.
 - **Validation is optional per endpoint** (omit `validate:`). In limit tests prefer status-only or `subset`.
   *Why:* deep comparison costs CPU on the load generator and can skew timings.
 
@@ -239,7 +249,7 @@ protocol: rest                         # default rest
 headers: { Authorization: "Bearer {{token}}" }
 query: { expand: "{{expand}}" }          # a null value is not sent
 extract: { order_id: $.id }            # JSONPath into the response, for later steps
-validate: { status: 201, body: subset } # status applied; body not yet (step 5)
+validate: { status: 201, body: subset } # body: none | subset | exact, compared with response.*
 vars: { quantity: 1 }
 ```
 

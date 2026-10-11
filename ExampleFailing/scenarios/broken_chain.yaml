@@ -1,0 +1,4 @@
+# list_beers fails on its extract, so get_beer is never sent and is reported as SKIP.
+steps:
+  - list_beers
+  - get_beer

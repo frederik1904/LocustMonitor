@@ -61,14 +61,18 @@ def run_scenario(scenario: Scenario, client: HttpClient, row: Mapping[str, Any] 
             data=request.body,
             catch_response=True,
         ) as response:
-            passed = _settle(handler, endpoint, response, extracted)
+            passed = _settle(handler, endpoint, response, context, extracted)
         if not passed:
             return tuple(later.endpoint.name for later in scenario.steps[index + 1 :])
     return ()
 
 
 def _settle(
-    handler: ProtocolHandler, endpoint: Endpoint, response: CaughtResponse, extracted: dict[str, Any]
+    handler: ProtocolHandler,
+    endpoint: Endpoint,
+    response: CaughtResponse,
+    context: Mapping[str, Any],
+    extracted: dict[str, Any],
 ) -> bool:
     """Mark the response passed or failed and collect its extracted values; True if it passed."""
     if response.status_code == 0:
@@ -78,7 +82,10 @@ def _settle(
             return False  # the client's default rule reports it
         failure = None
     else:
-        failure = handler.check(endpoint, response)
+        try:
+            failure = handler.check(endpoint, response, context)
+        except TemplateError as error:
+            failure = f"response file of '{endpoint.name}': {error}"
     if failure is None and endpoint.extract:
         try:
             extracted.update(handler.extract(endpoint, response))

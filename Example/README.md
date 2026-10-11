@@ -8,7 +8,7 @@ A small project against <https://sampleapis.com/> that touches each feature.
 | `get_beer` | endpoint | two path variables, templated expected response, `body: subset` |
 | `find_coffee` | endpoint | `query` parameters |
 | `create_coffee` | endpoint | a JSON request body with placeholders, a built-in (`{{$isotime}}`), a list variable, `extract` |
-| `delete_coffee` | endpoint | `DELETE` using an extracted value |
+| `delete_coffee` | endpoint | `DELETE` using an extracted value, `body: exact` |
 | `get_beer` | scenario | the simplest case: one endpoint with CSV data (`shared` mode) |
 | `browse_beers` | scenario | chaining: `list_beers` extracts `beer_id`, `get_beer` uses it |
 | `coffee_break` | scenario | per-step `vars`; a null variable leaves a query parameter out |
@@ -29,8 +29,7 @@ sampleapis.com is a free public service: keep the user count and duration low. I
 is shared by everyone, so the only scenario that writes (`coffee_lifecycle`) deletes what it creates;
 follow the same pattern if you add another.
 
-`validate.body` is read from the files but not applied yet (step 5 in `TODO.md`), so `body: subset`
-currently passes on status alone.
+Every scenario here is meant to pass. `ExampleFailing/` next to this folder shows what failures look like.
 
 A load run that stops between the two steps of `coffee_lifecycle` leaves one entry behind.
 Remove it by repeating this until it answers 404:

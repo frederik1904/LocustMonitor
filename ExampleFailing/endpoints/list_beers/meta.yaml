@@ -1,0 +1,4 @@
+# The extract asks for a field the API does not return, which fails this step.
+path: /beers/ale
+extract:
+  brewery_id: $[0].brewery.id

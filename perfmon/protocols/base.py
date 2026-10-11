@@ -31,8 +31,11 @@ class ProtocolHandler(Protocol):
 
     def prepare(self, endpoint: Endpoint, context: Mapping[str, Any]) -> PreparedRequest: ...
 
-    def check(self, endpoint: Endpoint, response: HttpResponse) -> str | None:
-        """Return why the response fails the endpoint's `validate` block, or None if it passes."""
+    def check(self, endpoint: Endpoint, response: HttpResponse, context: Mapping[str, Any]) -> str | None:
+        """Return why the response fails the endpoint's `validate` block, or None if it passes.
+
+        `context` is the one the request was built from, for placeholders in the expected response.
+        """
         ...
 
     def extract(self, endpoint: Endpoint, response: HttpResponse) -> dict[str, Any]:

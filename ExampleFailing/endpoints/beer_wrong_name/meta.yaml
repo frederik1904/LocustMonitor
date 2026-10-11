@@ -1,0 +1,5 @@
+# subset: the keys in response.json must match; the response may have more.
+path: /beers/ale/1
+validate:
+  status: 200
+  body: subset
