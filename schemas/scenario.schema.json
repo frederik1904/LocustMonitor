@@ -1,5 +1,48 @@
 {
   "$defs": {
+    "DataMode": {
+      "enum": [
+        "shared",
+        "scenario",
+        "random"
+      ],
+      "title": "DataMode",
+      "type": "string"
+    },
+    "DataSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "description": "CSV file, relative to the project folder. An empty cell leaves the value out.",
+          "format": "path",
+          "title": "File",
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/DataMode",
+          "default": "shared",
+          "description": "shared: one cursor per file, shared by every scenario using it. scenario: this scenario has its own cursor. random: like shared, with the rows shuffled once."
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Makes the shuffle of mode: random repeatable.",
+          "title": "Seed"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "title": "DataSpec",
+      "type": "object"
+    },
     "StepFile": {
       "additionalProperties": false,
       "properties": {
@@ -11,7 +54,7 @@
         "vars": {
           "additionalProperties": true,
           "default": {},
-          "description": "Values for {{placeholders}}. The most specific wins: step, then scenario, then endpoint.",
+          "description": "Values for {{placeholders}}. The most specific wins: step, then scenario, then endpoint; data rows and extracted values come on top. A null value leaves the header, query parameter or JSON value it fills out of the request.",
           "title": "Vars",
           "type": "object"
         }
@@ -53,21 +96,23 @@
     "data": {
       "anyOf": [
         {
-          "format": "path",
-          "type": "string"
+          "type": "string",
+          "description": "Path to a CSV file."
+        },
+        {
+          "$ref": "#/$defs/DataSpec"
         },
         {
           "type": "null"
         }
       ],
       "default": null,
-      "description": "CSV file with one row of placeholder values per iteration, relative to the project folder. The row is shared by every step.",
-      "title": "Data"
+      "description": "One row of placeholder values per iteration: a CSV path, or a mapping with file and mode. The row is shared by every step."
     },
     "vars": {
       "additionalProperties": true,
       "default": {},
-      "description": "Values for {{placeholders}}. The most specific wins: step, then scenario, then endpoint.",
+      "description": "Values for {{placeholders}}. The most specific wins: step, then scenario, then endpoint; data rows and extracted values come on top. A null value leaves the header, query parameter or JSON value it fills out of the request.",
       "title": "Vars",
       "type": "object"
     }

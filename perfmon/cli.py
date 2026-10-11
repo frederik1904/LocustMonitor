@@ -41,6 +41,10 @@ def main(argv: list[str] | None = None) -> int:
     # Imported late: Locust patches the standard library on import.
     from perfmon.modes.check import check_project, format_report
 
-    outcomes = check_project(project, args.host, args.scenarios)
+    try:
+        outcomes = check_project(project, args.host, args.scenarios)
+    except ConfigError as error:
+        print(f"Configuration error: {error}", file=sys.stderr)
+        return 2
     print(format_report(outcomes))
     return 0 if all(outcome.passed for outcome in outcomes) else 1

@@ -442,6 +442,15 @@ wheels = [
 ]
 
 [[package]]
+name = "jsonpath-ng"
+version = "1.10.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/5f/29d3b755e3d0fd5572315435c0d0473891c60b53df5f92edf1785a9c8729/jsonpath_ng-1.10.0.tar.gz", hash = "sha256:e5fd041a757778dd5b75375a5d92237589cfd3b681c154654c3998ea37a09e64", size = 87017, upload-time = "2026-10-09T13:41:53.692Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9a/11/43dbdc0314d4ad4578f2267ebd9065bd8b73c951ce5c3f7bfde447f8f2e5/jsonpath_ng-1.10.0-py3-none-any.whl", hash = "sha256:e7456c4649e63c0f71b5c1724fcf2dee33caac024fb00cf9c8f65aaade6e138f", size = 75287, upload-time = "2026-10-09T13:41:52.195Z" },
+]
+
+[[package]]
 name = "locust"
 version = "2.46.7"
 source = { registry = "https://pypi.org/simple" }
@@ -613,6 +622,7 @@ name = "performancemonitor"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "jsonpath-ng" },
     { name = "locust" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -625,6 +635,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "jsonpath-ng", specifier = ">=1.10.0" },
     { name = "locust", specifier = ">=2.46.7" },
     { name = "pydantic", specifier = ">=2.14.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },

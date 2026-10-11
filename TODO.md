@@ -30,7 +30,7 @@ functional endpoint checks, driven by folders of YAML and request/response files
 | 1 | Models, loader, template renderer | Done |
 | 2 | REST handler, runner, user factory, locustfile | Done |
 | 3 | `check` mode (functional endpoint testing) | Done |
-| 4 | Chaining (`extract`) and CSV data source | Todo |
+| 4 | Chaining (`extract`) and CSV data source | Done |
 | 5 | Response validation (`subset` / `exact`) | Todo |
 | 6 | `baseline` and `limit` modes | Todo |
 | 7 | Reporter interface and Excel reporter | Todo |
@@ -47,32 +47,22 @@ functional endpoint checks, driven by folders of YAML and request/response files
 - [x] Entry point: `uv run perfmon check --root DIR --host URL [scenario ...]`.
 - [x] `validate.status` is applied, in check mode and in load runs.
 
-### 4. Chaining and CSV data
+### 4. Chaining and CSV data (done)
 
-- [ ] Add `extract(endpoint, response) -> dict` to `ProtocolHandler`; JSONPath for REST
-      (pick a library, e.g. `jsonpath-ng`).
-- [ ] Build the per-iteration context in the runner: step vars < data row < extracted values.
-- [ ] Create `perfmon/data/` with `base.py` (`DataSource` interface) and `csv.py`.
-- [ ] CSV rows: one row per scenario iteration, handed out sequentially, wrapping at the end.
-- [ ] A standalone endpoint draws its own row each time it runs.
-- [ ] In a scenario, one row is drawn at the start of the iteration and shared by every step in it.
-- [ ] Three data modes, as a `DataMode` enum in `schema.py`:
-  - `shared` (default): one sequential cursor per CSV file, shared by every scenario that uses the file.
-  - `scenario`: each scenario has its own sequential cursor, even on the same file.
-  - `random`: like `shared`, but the rows are shuffled once when the file is loaded.
-- [ ] `data:` accepts a path (shorthand for `shared`) or `{file: ..., mode: ...}`.
-- [ ] Optional seed for the `random` shuffle so a run can be repeated.
-- [ ] Fail a chain early (skip remaining steps) when a step fails or an extract finds nothing.
-- [ ] Null means omit: a variable that is null (YAML `null`, or an empty CSV cell) removes whatever has
-      that placeholder as its whole value:
-  - a JSON body key (`"note": {{note}}` or `"note": "{{note}}"`),
-  - a header,
-  - a query parameter.
-- [ ] Add a `query:` mapping to `meta.yaml` so query parameters can be omitted (in `path` they are plain text).
-- [ ] A null placeholder inside a longer string or in `path` is an error (nothing sensible to omit).
-- [ ] Only parse and re-serialise the body when a null variable is actually present.
-- [ ] Example: `browse_beers` passes the extracted `beer_id` on; `coffee_lifecycle` deletes the id returned by the create; `get_beer` reads `data/beer_ids.csv`; one scenario per data mode.
-- [ ] Editor support: descriptions for `query` and the `data` mode form; regenerate the schemas.
+- [x] `extract(endpoint, response) -> dict` on `ProtocolHandler`; JSONPath for REST via `jsonpath-ng`.
+- [x] Per-iteration context in the runner: step vars < data row < extracted values.
+- [x] `perfmon/data/`: `base.py` (`DataSource`), `csv.py` (`CsvSource`), `pool.py` (who shares a cursor).
+- [x] One row per scenario iteration, shared by every step.
+- [x] Data modes `shared` (default), `scenario` and `random` (shuffled once, optional `seed`).
+- [x] `data:` accepts a path or `{file, mode, seed}`.
+- [x] A failed step, or an extract that finds nothing, stops the chain; check mode reports the rest as SKIP.
+- [x] Null means omit for JSON body keys and list items, headers and query parameters.
+- [x] `query:` mapping in `meta.yaml`.
+- [x] A null placeholder inside a longer value or in `path` is an error.
+- [x] The body is only parsed and re-serialised when a null variable is present.
+- [x] Example: chaining in `browse_beers` and `coffee_lifecycle`, CSV in `get_beer`, one scenario per data
+      mode (`get_beer`, `get_stout`, `random_beer`), null omission in `coffee_break` and `coffee_lifecycle`.
+- [x] Editor support: descriptions for `query` and the `data` forms; schemas regenerated.
 
 ### 5. Validation
 
@@ -108,6 +98,8 @@ functional endpoint checks, driven by folders of YAML and request/response files
 
 - [ ] Load-time check that every `{{placeholder}}` is supplied by vars, a CSV header or an earlier
       `extract` (today a missing variable only fails at run time).
+- [ ] Load-time check of JSONPath syntax in `extract` (today a bad expression fails the step at run time).
+- [ ] Check mode: option to run every data row instead of only the first.
 - [ ] List the allowed keys in "unknown key" errors (lost when moving to pydantic).
 - [ ] A single CLI wrapping Locust so `--root` and `--mode` replace the environment variable.
 - [ ] README with the file formats.
@@ -124,8 +116,6 @@ Depends on `query:` (step 4) and body validation (step 5).
 - [ ] Folder name from `operationId`, falling back to method + path.
 - [ ] `meta.yaml`: `method`, `path` with `{id}` turned into `{{id}}`, `query`, `headers`, and
       `validate.status` from the first 2xx response.
-- [ ] Generated endpoints are `standalone: false`: they are building blocks for hand-written scenarios,
-      not tests to run on their own.
 - [ ] `request.json` / `response.json` from the spec's examples when present.
 - [ ] Otherwise build `request.json` from the schema: `$ref` (use a library), `allOf`/`oneOf`/`anyOf`,
       enums, nested and recursive types.
@@ -143,12 +133,11 @@ Depends on `query:` (step 4) and body validation (step 5).
 - **Endpoints and scenarios are separate.** `endpoints/<name>/` holds `meta.yaml`, `request.*` and
   `response.*`; `scenarios/<name>.yaml` chains endpoints. *Why:* shared steps such as `login` are not
   copied into every chain, and the same endpoint can be fed different data per scenario.
-- **Endpoints are `standalone: true` by default.** A standalone endpoint is also a one-step scenario of
-  the same name. *Why:* testing one endpoint should not need a scenario file. Building blocks that only
-  work inside a chain set `standalone: false`.
-- **Data is bound at the scenario level.** An endpoint may declare a default `data:` for standalone use;
-  an explicit scenario uses only its own `data:`. *Why:* inheriting from steps would be ambiguous when
-  several steps have defaults.
+- **Only scenarios run; endpoints are building blocks.** Testing one endpoint means a two-line scenario
+  file. *Why:* one way to define a test is cleaner than two, and null-means-omit lets a scenario shape a
+  request without needing an endpoint-level variant. `standalone` and endpoint-level `data:` were removed.
+- **Data is bound in the scenario file only.** *Why:* the row is shared by all steps, so it belongs to
+  the scenario, not to any one endpoint.
 - **A variant is a scenario.** To run the same endpoint with other parameters or data, add a small
   scenario file that reuses it (see `Example/scenarios/get_stout.yaml`). *Why:* it runs side by side with
   the base, with its own weight, data and statistics, and needs no extra concept.
@@ -170,7 +159,7 @@ Depends on `query:` (step 4) and body validation (step 5).
 - **A missing variable is an error**, not an empty string. *Why:* silent blanks produce misleading test results.
 - **Non-string values are written as JSON** (`true`, `null`, `500`). *Why:* `"qty": {{qty}}` must yield valid JSON.
 - **Built-ins:** `{{$uuid}}`, `{{$timestamp}}`, `{{$isotime}}`.
-- **Null means omit (planned, step 4).** A null variable drops the JSON key, header or query parameter
+- **Null means omit.** A null variable drops the JSON key, header or query parameter
   it fills, instead of sending `null`. *Why:* optional fields are common and no current endpoint needs an
   explicit null; an empty CSV cell can then mean "leave this out for this row". A literal `null` typed in
   the request file is still sent. Revisit for SOAP and GraphQL. *Why structural rather than Mustache
@@ -205,8 +194,7 @@ Depends on `query:` (step 4) and body validation (step 5).
 
 - **One Locust user class per scenario**, named after it and weighted by `weight`. *Why:* `locust flow ping`
   selects scenarios, and Locust's own weighting handles the mix.
-- **Stats names:** a standalone endpoint reports as `name`; inside a chain as `scenario/name`. *Why:* the
-  same endpoint in two scenarios is measured separately.
+- **Stats names are `scenario/endpoint`.** *Why:* the same endpoint in two scenarios is measured separately.
 - **`PERFMON_ROOT` is an environment variable.** *Why:* Locust imports the locustfile
   before parsing its own arguments, and user classes must exist at import.
 - **Content-Type is guessed from the request file extension** unless `meta.yaml` sets it.
@@ -220,15 +208,19 @@ Depends on `query:` (step 4) and body validation (step 5).
 
 ### Data and reporting
 
-- **One data row per scenario iteration.** A standalone endpoint requests its own row each run; in a
-  scenario the row is drawn once and shared by all of its steps. *Why:* the steps of a chain must see the
-  same user/order/etc., while independent endpoints must not be tied to each other's data.
+- **One data row per scenario iteration**, drawn once and shared by all of its steps. *Why:* the steps
+  of a chain must see the same user/order/etc.
 - **Three data modes: `shared`, `scenario`, `random`.** *Why:* `shared` suits single-use rows (two
   scenarios never get the same row at the same time), `scenario` keeps each scenario's rows stable when
   others are added or removed, and `random` is `shared` over shuffled rows: it avoids cache-friendly, predictable ordering while
   still using every row once before any row repeats.
 - **The mode decides which row is drawn, never how it is shared:** in every mode the row is drawn once
   per iteration and shared by all steps of a scenario.
+- **Extracted values beat everything else in the context.** *Why:* a value from an earlier response is
+  the most recent and most specific thing known about this iteration.
+- **A failed step stops the chain.** *Why:* later steps would fail for the same reason and only add
+  noise to the statistics.
+- **Check mode uses the first data row of each scenario.**
 - **Sequential modes wrap at the end of the file.** *Why:* the simplest way to keep runs consistent
   and repeatable.
 - **Single-process first.** The cursor sits behind `DataSource` so distributed runs can be added later.
@@ -245,17 +237,16 @@ path: /customers/{{customer}}/orders   # required
 method: POST                           # default GET
 protocol: rest                         # default rest
 headers: { Authorization: "Bearer {{token}}" }
-extract: { order_id: $.id }            # not applied yet (step 4)
+query: { expand: "{{expand}}" }          # a null value is not sent
+extract: { order_id: $.id }            # JSONPath into the response, for later steps
 validate: { status: 201, body: subset } # status applied; body not yet (step 5)
-standalone: true                       # default true
-data: data/users.csv                   # not used yet (step 4)
 vars: { quantity: 1 }
 ```
 
 ```yaml
 # scenarios/order_flow.yaml
 weight: 3
-data: data/users.csv
+data: data/users.csv                   # or { file: ..., mode: shared | scenario | random, seed: 1 }
 vars: { currency: DKK }
 steps:
   - login

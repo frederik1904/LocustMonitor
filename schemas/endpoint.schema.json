@@ -56,7 +56,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "An endpoint's meta.yaml.",
+  "description": "An endpoint's meta.yaml. Endpoints are building blocks: only scenarios run.",
   "properties": {
     "path": {
       "description": "URL path, e.g. /orders/{{order_id}}.",
@@ -72,6 +72,31 @@
       "$ref": "#/$defs/HttpMethod",
       "default": "GET",
       "description": "HTTP method."
+    },
+    "query": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "default": {},
+      "description": "Query string parameters; values may use {{placeholders}}. A null value is not sent.",
+      "title": "Query",
+      "type": "object"
     },
     "headers": {
       "additionalProperties": {
@@ -103,30 +128,10 @@
       "default": null,
       "description": "Checks on the response. Without it, only connection errors and status >= 400 fail."
     },
-    "standalone": {
-      "default": true,
-      "description": "Also run this endpoint on its own as a one-step scenario. Set false for building blocks.",
-      "title": "Standalone",
-      "type": "boolean"
-    },
-    "data": {
-      "anyOf": [
-        {
-          "format": "path",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "CSV file with one row of placeholder values per iteration, relative to the project folder. Used when the endpoint runs on its own.",
-      "title": "Data"
-    },
     "vars": {
       "additionalProperties": true,
       "default": {},
-      "description": "Values for {{placeholders}}. The most specific wins: step, then scenario, then endpoint.",
+      "description": "Values for {{placeholders}}. The most specific wins: step, then scenario, then endpoint; data rows and extracted values come on top. A null value leaves the header, query parameter or JSON value it fills out of the request.",
       "title": "Vars",
       "type": "object"
     }

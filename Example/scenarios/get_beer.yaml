@@ -1,0 +1,4 @@
+# The simplest scenario: one endpoint, fed from a CSV file.
+data: data/beer_ids.csv   # shorthand for { file: data/beer_ids.csv, mode: shared }
+steps:
+  - get_beer

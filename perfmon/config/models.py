@@ -4,11 +4,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from perfmon.config.schema import ApiProtocol, HttpMethod, ValidationSpec
+from perfmon.config.schema import ApiProtocol, DataMode, HttpMethod, ValidationSpec
 
 
 class ConfigError(Exception):
     """A problem in the endpoint/scenario files, always prefixed with the offending path."""
+
+
+@dataclass(frozen=True)
+class DataBinding:
+    file: Path
+    mode: DataMode = DataMode.SHARED
+    seed: int | None = None
 
 
 @dataclass(frozen=True)
@@ -17,14 +24,13 @@ class Endpoint:
     path: str
     protocol: ApiProtocol
     method: HttpMethod
+    query: dict[str, Any]
     headers: dict[str, str]
     extract: dict[str, str]
     validation: ValidationSpec | None
-    standalone: bool
     request: str | None
     request_content_type: str | None
     response: str | None
-    data: Path | None
     vars: dict[str, Any]
 
 
@@ -38,7 +44,7 @@ class Step:
 class Scenario:
     name: str
     steps: tuple[Step, ...]
-    data: Path | None = None
+    data: DataBinding | None = None
     weight: int = 1
 
 

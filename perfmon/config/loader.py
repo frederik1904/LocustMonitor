@@ -4,23 +4,19 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from perfmon.config.models import ConfigError, Endpoint, Project, Scenario, Step
-from perfmon.config.schema import EndpointFile, ScenarioFile
+from perfmon.config.models import ConfigError, DataBinding, Endpoint, Project, Scenario, Step
+from perfmon.config.schema import DataSpec, EndpointFile, ScenarioFile
 
 
 def load_project(root: str | Path) -> Project:
-    """Read endpoints/ and scenarios/ under root.
-
-    Endpoints marked standalone (the default) also become a one-step scenario of
-    the same name.
-    """
+    """Read endpoints/ and scenarios/ under root. Endpoints only run as steps of a scenario."""
     root = Path(root)
     endpoint_dir = root / "endpoints"
     if not endpoint_dir.is_dir():
         raise ConfigError(f"{endpoint_dir}: directory not found")
 
     endpoints = {
-        folder.name: _load_endpoint(folder, root)
+        folder.name: _load_endpoint(folder)
         for folder in sorted(endpoint_dir.iterdir())
         if folder.is_dir()
     }
@@ -29,24 +25,10 @@ def load_project(root: str | Path) -> Project:
     for file in sorted((root / "scenarios").glob("*.yaml")):
         scenarios[file.stem] = _load_scenario(file, root, endpoints)
 
-    for endpoint in endpoints.values():
-        if not endpoint.standalone:
-            continue
-        if endpoint.name in scenarios:
-            raise ConfigError(
-                f"{root / 'scenarios' / (endpoint.name + '.yaml')}: has the same name as a "
-                f"standalone endpoint; rename it or set 'standalone: false' on the endpoint"
-            )
-        scenarios[endpoint.name] = Scenario(
-            name=endpoint.name,
-            steps=(Step(endpoint, endpoint.vars),),
-            data=endpoint.data,
-        )
-
     return Project(endpoints, scenarios)
 
 
-def _load_endpoint(folder: Path, root: Path) -> Endpoint:
+def _load_endpoint(folder: Path) -> Endpoint:
     meta_path = folder / "meta.yaml"
     if not meta_path.is_file():
         raise ConfigError(f"{meta_path}: file not found")
@@ -58,14 +40,13 @@ def _load_endpoint(folder: Path, root: Path) -> Endpoint:
         path=meta.path,
         protocol=meta.protocol,
         method=meta.method,
+        query=meta.query,
         headers=meta.headers,
         extract=meta.extract,
         validation=meta.validation,
-        standalone=meta.standalone,
         request=_read(request_file),
         request_content_type=mimetypes.guess_type(request_file.name)[0] if request_file else None,
         response=_read(response_file),
-        data=_data_file(meta.data, meta_path, root),
         vars=meta.vars,
     )
 
@@ -90,13 +71,13 @@ def _load_scenario(file: Path, root: Path, endpoints: dict[str, Endpoint]) -> Sc
     )
 
 
-def _data_file(data: Path | None, source: Path, root: Path) -> Path | None:
+def _data_file(data: DataSpec | None, source: Path, root: Path) -> DataBinding | None:
     if data is None:
         return None
-    data_path = root / data
+    data_path = root / data.file
     if not data_path.is_file():
-        raise ConfigError(f"{source}: data file '{data}' not found (looked in {root})")
-    return data_path
+        raise ConfigError(f"{source}: data file '{data.file}' not found (looked in {root})")
+    return DataBinding(data_path, data.mode, data.seed)
 
 
 def _find_sibling(folder: Path, stem: str) -> Path | None:

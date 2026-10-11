@@ -38,8 +38,9 @@ def write(root: Path, relative: str, text: str) -> None:
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
     write(tmp_path, "endpoints/ok/meta.yaml", "path: /ok/{{id}}\nvars: {id: 5}\nvalidate: {status: 200}\n")
-    write(tmp_path, "endpoints/gone/meta.yaml", "path: /gone\nstandalone: false\nvalidate: {status: 404}\n")
+    write(tmp_path, "endpoints/gone/meta.yaml", "path: /gone\nvalidate: {status: 404}\n")
     write(tmp_path, "scenarios/flow.yaml", "steps: [ok, gone]\n")
+    write(tmp_path, "scenarios/ok.yaml", "steps: [ok]\n")
     return tmp_path
 
 
@@ -54,9 +55,11 @@ def test_reports_one_outcome_per_step(project: Path, host: str):
 
 
 def test_failures_explain_themselves(project: Path, host: str):
-    write(project, "endpoints/gone/meta.yaml", "path: /gone\nstandalone: false\nvalidate: {status: 200}\n")
+    write(project, "endpoints/gone/meta.yaml", "path: /gone\nvalidate: {status: 200}\n")
     write(project, "endpoints/unchecked/meta.yaml", "path: /missing\n")
     write(project, "endpoints/broken/meta.yaml", "path: /ok/{{nope}}\n")
+    write(project, "scenarios/unchecked.yaml", "steps: [unchecked]\n")
+    write(project, "scenarios/broken.yaml", "steps: [broken]\n")
     failures = {o.scenario: o.failure for o in check_project(load_project(project), host) if not o.passed}
     assert failures["flow"] == "expected status 200, got 404"
     assert "404" in failures["unchecked"]
@@ -71,7 +74,7 @@ def test_unreachable_host_is_a_failure_not_a_crash(project: Path):
 def test_cli_exit_codes(project: Path, host: str, capsys: pytest.CaptureFixture[str]):
     root = ["--root", str(project), "--host", host]
     assert main(["check", *root]) == 0
-    assert "3 passed, 0 failed" in capsys.readouterr().out
+    assert "3 passed, 0 failed, 0 skipped" in capsys.readouterr().out
 
     assert main(["check", "nope", *root]) == 2
     assert "Unknown scenario(s): nope (available: flow, ok)" in capsys.readouterr().err
@@ -83,3 +86,19 @@ def test_cli_exit_codes(project: Path, host: str, capsys: pytest.CaptureFixture[
     write(project, "endpoints/ok/meta.yaml", "pth: /ok\n")
     assert main(["check", *root]) == 2
     assert "Configuration error" in capsys.readouterr().err
+
+
+def test_steps_after_a_failure_are_reported_as_skipped(project: Path, host: str, capsys: pytest.CaptureFixture[str]):
+    write(project, "scenarios/flow.yaml", "steps: [gone, ok]\n")
+    write(project, "endpoints/gone/meta.yaml", "path: /gone\n")
+    assert main(["check", "flow", "--root", str(project), "--host", host]) == 1
+    out = capsys.readouterr().out
+    assert "SKIP  ok  (an earlier step failed)" in out and "0 passed, 1 failed, 1 skipped" in out
+
+
+def test_check_uses_the_first_data_row(project: Path, host: str):
+    write(project, "data/ids.csv", "id,unused\n8,\n9,x\n")
+    write(project, "endpoints/ok/meta.yaml", "path: /ok/{{id}}\n")
+    write(project, "scenarios/ok.yaml", "steps: [ok]\ndata: data/ids.csv\n")
+    outcomes = check_project(load_project(project), host, only=["ok"])
+    assert outcomes[0].request == f"GET {host}/ok/8"

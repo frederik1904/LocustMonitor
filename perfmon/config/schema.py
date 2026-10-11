@@ -8,7 +8,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ApiProtocol(StrEnum):
@@ -31,6 +31,12 @@ class BodyMatch(StrEnum):
     EXACT = "exact"
 
 
+class DataMode(StrEnum):
+    SHARED = "shared"
+    SCENARIO = "scenario"
+    RANDOM = "random"
+
+
 class _FileModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, coerce_numbers_to_str=True)
 
@@ -43,16 +49,47 @@ class ValidationSpec(_FileModel):
     )
 
 
-_VARS = "Values for {{placeholders}}. The most specific wins: step, then scenario, then endpoint."
-_DATA = "CSV file with one row of placeholder values per iteration, relative to the project folder."
+class DataSpec(_FileModel):
+    file: Path = Field(description="CSV file, relative to the project folder. An empty cell leaves the value out.")
+    mode: DataMode = Field(
+        default=DataMode.SHARED,
+        description=(
+            "shared: one cursor per file, shared by every scenario using it. "
+            "scenario: this scenario has its own cursor. "
+            "random: like shared, with the rows shuffled once."
+        ),
+    )
+    seed: int | None = Field(default=None, description="Makes the shuffle of mode: random repeatable.")
+
+    @model_validator(mode="after")
+    def _seed_needs_random(self) -> "DataSpec":
+        if self.seed is not None and self.mode is not DataMode.RANDOM:
+            raise ValueError("seed only applies to mode: random")
+        return self
+
+
+def _path_is_shorthand(value: Any) -> Any:
+    return {"file": value} if isinstance(value, str) else value
+
+
+_VARS = (
+    "Values for {{placeholders}}. The most specific wins: step, then scenario, then endpoint; "
+    "data rows and extracted values come on top. A null value leaves the header, query parameter "
+    "or JSON value it fills out of the request."
+)
+_DATA = "One row of placeholder values per iteration: a CSV path, or a mapping with file and mode."
 
 
 class EndpointFile(_FileModel):
-    """An endpoint's meta.yaml."""
+    """An endpoint's meta.yaml. Endpoints are building blocks: only scenarios run."""
 
     path: str = Field(description="URL path, e.g. /orders/{{order_id}}.")
     protocol: ApiProtocol = Field(default=ApiProtocol.REST, description="API style of the endpoint.")
     method: HttpMethod = Field(default=HttpMethod.GET, description="HTTP method.")
+    query: dict[str, str | int | float | bool | None] = Field(
+        default={},
+        description="Query string parameters; values may use {{placeholders}}. A null value is not sent.",
+    )
     headers: dict[str, str] = Field(default={}, description="Request headers; values may use {{placeholders}}.")
     extract: dict[str, str] = Field(
         default={},
@@ -64,11 +101,6 @@ class EndpointFile(_FileModel):
         alias="validate",
         description="Checks on the response. Without it, only connection errors and status >= 400 fail.",
     )
-    standalone: bool = Field(
-        default=True,
-        description="Also run this endpoint on its own as a one-step scenario. Set false for building blocks.",
-    )
-    data: Path | None = Field(default=None, description=_DATA + " Used when the endpoint runs on its own.")
     vars: dict[str, Any] = Field(default={}, description=_VARS)
 
     @field_validator("method", mode="before")
@@ -90,8 +122,10 @@ class ScenarioFile(_FileModel):
         description="Endpoints to call, in order. Each is an endpoint name, or a mapping to override vars.",
     )
     weight: int = Field(default=1, ge=1, description="How often this scenario is picked relative to the others.")
-    data: Path | None = Field(default=None, description=_DATA + " The row is shared by every step.")
+    data: DataSpec | None = Field(default=None, description=_DATA + " The row is shared by every step.")
     vars: dict[str, Any] = Field(default={}, description=_VARS)
+
+    _data_shorthand = field_validator("data", mode="before")(_path_is_shorthand)
 
     @field_validator("steps", mode="before")
     @classmethod

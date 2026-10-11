@@ -1,6 +1,7 @@
-# A query-string lookup. Only used inside scenarios, so it is not picked up on its own.
-path: /coffee/{{temperature}}?id={{coffee_id}}
-standalone: false
+# A query-string lookup.
+path: /coffee/{{temperature}}
+query:
+  id: "{{coffee_id}}"     # not sent when coffee_id is null
 vars:
   temperature: hot
   coffee_id: 2

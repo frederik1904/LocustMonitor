@@ -1,9 +1,10 @@
 # A request with a body: create an entry, then delete it so nothing is left behind.
-# The scenario vars are shared by both steps, so they agree on coffee_id.
+# delete_coffee gets coffee_id from create_coffee's response, not from these vars.
 vars:
-  coffee_id: 990001
+  new_id: 990001
   title: Perfmon example
   ingredients: [Espresso, Steamed milk]
+  origin: null            # null leaves the "origin" key out of the body
 steps:
   - create_coffee
   - delete_coffee

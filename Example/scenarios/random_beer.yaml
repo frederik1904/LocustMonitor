@@ -1,0 +1,8 @@
+# The same file again with the rows shuffled; the seed makes the order repeatable.
+data:
+  file: data/beer_ids.csv
+  mode: random
+  seed: 7
+steps:
+  - endpoint: get_beer
+    vars: { style: stouts }

@@ -1,6 +1,8 @@
 # A variant of an existing endpoint: same get_beer base, different style.
 # It runs alongside get_beer and gets its own line in the statistics.
-data: data/beer_ids.csv
+data:
+  file: data/beer_ids.csv
+  mode: scenario          # its own cursor, independent of get_beer reading the same file
 steps:
   - endpoint: get_beer
     vars: { style: stouts }

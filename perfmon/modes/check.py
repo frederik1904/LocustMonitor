@@ -7,6 +7,7 @@ from locust.clients import HttpSession
 from locust.event import EventHook
 
 from perfmon.config.models import Project
+from perfmon.data.pool import DataPool
 from perfmon.runner import run_scenario
 from perfmon.template import TemplateError
 
@@ -18,10 +19,11 @@ class StepOutcome:
     status: int | None
     elapsed_ms: float | None
     failure: str | None
+    skipped: bool = False  # not sent because an earlier step of the scenario failed
 
     @property
     def passed(self) -> bool:
-        return self.failure is None
+        return self.failure is None and not self.skipped
 
 
 def check_project(project: Project, host: str, only: list[str] | None = None) -> list[StepOutcome]:
@@ -43,13 +45,17 @@ def check_project(project: Project, host: str, only: list[str] | None = None) ->
     # The same session class Locust users get, so a check exercises exactly what a load test sends.
     request_event = EventHook()
     request_event.add_listener(record)
+    pool = DataPool(project)
     for name in only or sorted(project.scenarios):
         current = name
         client = HttpSession(host, request_event, user=None)
+        scenario = project.scenarios[name]
         try:
-            run_scenario(project.scenarios[name], client)
+            skipped = run_scenario(scenario, client, pool.next_row(scenario))
         except TemplateError as error:
             outcomes.append(StepOutcome(name, "(request not sent)", None, None, str(error)))
+            continue
+        outcomes.extend(StepOutcome(name, endpoint, None, None, None, skipped=True) for endpoint in skipped)
     return outcomes
 
 
@@ -60,13 +66,17 @@ def format_report(outcomes: list[StepOutcome]) -> str:
         if outcome.scenario != scenario:
             scenario = outcome.scenario
             lines.append(scenario)
+        if outcome.skipped:
+            lines.append(f"  SKIP  {outcome.request}  (an earlier step failed)")
+            continue
         verdict = "PASS" if outcome.passed else "FAIL"
         status = outcome.status if outcome.status is not None else "-"
         elapsed = f"{outcome.elapsed_ms:.0f} ms" if outcome.elapsed_ms is not None else "-"
         lines.append(f"  {verdict}  {outcome.request}  [{status}, {elapsed}]")
         if outcome.failure:
             lines.append(f"        {outcome.failure}")
-    failed = sum(not outcome.passed for outcome in outcomes)
+    skipped = sum(outcome.skipped for outcome in outcomes)
+    failed = sum(outcome.failure is not None for outcome in outcomes)
     lines.append("")
-    lines.append(f"{len(outcomes) - failed} passed, {failed} failed")
+    lines.append(f"{len(outcomes) - failed - skipped} passed, {failed} failed, {skipped} skipped")
     return "\n".join(lines)

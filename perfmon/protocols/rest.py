@@ -1,24 +1,32 @@
 from collections.abc import Mapping
+from functools import lru_cache
 from typing import Any
 
+from jsonpath_ng import JSONPath, parse
+
 from perfmon.config.models import Endpoint
-from perfmon.protocols.base import HttpResponse, PreparedRequest
-from perfmon.template import render, render_any
+from perfmon.protocols.base import ExtractError, HttpResponse, PreparedRequest
+from perfmon.template import render, render_json, render_mapping
+
+_JSON = "application/json"
 
 
 class RestHandler:
     def prepare(self, endpoint: Endpoint, context: Mapping[str, Any]) -> PreparedRequest:
-        headers = render_any(endpoint.headers, context)
+        headers = render_mapping(endpoint.headers, context)
         body = None
         if endpoint.request is not None:
+            is_json = endpoint.request_content_type == _JSON
+            text = render_json(endpoint.request, context) if is_json else render(endpoint.request, context)
             # Encoded here because requests would otherwise send a str body as latin-1.
-            body = render(endpoint.request, context).encode("utf-8")
+            body = text.encode("utf-8")
             declared = {name.lower() for name in headers}
             if endpoint.request_content_type and "content-type" not in declared:
                 headers["Content-Type"] = endpoint.request_content_type
         return PreparedRequest(
             method=endpoint.method.value,
             path=render(endpoint.path, context),
+            query=render_mapping(endpoint.query, context),
             headers=headers,
             body=body,
         )
@@ -28,3 +36,24 @@ class RestHandler:
         if expected is not None and response.status_code != expected:
             return f"expected status {expected}, got {response.status_code}"
         return None
+
+    def extract(self, endpoint: Endpoint, response: HttpResponse) -> dict[str, Any]:
+        try:
+            document = response.json()
+        except ValueError as error:
+            raise ExtractError("extract: the response is not JSON") from error
+        values = {}
+        for name, expression in endpoint.extract.items():
+            matches = _compile(expression).find(document)
+            if not matches:
+                raise ExtractError(f"extract '{name}': {expression} matched nothing in the response")
+            values[name] = matches[0].value
+        return values
+
+
+@lru_cache(maxsize=None)
+def _compile(expression: str) -> JSONPath:
+    try:
+        return parse(expression)
+    except Exception as error:  # jsonpath-ng raises several unrelated types for bad syntax
+        raise ExtractError(f"extract: invalid JSONPath '{expression}': {error}") from error
