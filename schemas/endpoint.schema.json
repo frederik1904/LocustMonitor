@@ -29,6 +29,57 @@
       "title": "HttpMethod",
       "type": "string"
     },
+    "Targets": {
+      "additionalProperties": false,
+      "description": "What counts as good enough. Reports say for every step whether its targets were met.",
+      "properties": {
+        "p95_ms": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "95% of the requests must take no longer than this many milliseconds.",
+          "title": "P95 Ms"
+        },
+        "p99_ms": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "99% of the requests must take no longer than this many milliseconds.",
+          "title": "P99 Ms"
+        },
+        "error_percent": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "No more than this percentage of the requests may fail.",
+          "title": "Error Percent"
+        }
+      },
+      "title": "Targets",
+      "type": "object"
+    },
     "ValidationSpec": {
       "additionalProperties": false,
       "properties": {
@@ -127,6 +178,15 @@
       ],
       "default": null,
       "description": "Checks on the response. Without it, only connection errors and status >= 400 fail."
+    },
+    "targets": {
+      "$ref": "#/$defs/Targets",
+      "default": {
+        "p95_ms": null,
+        "p99_ms": null,
+        "error_percent": null
+      },
+      "description": "Response-time and failure targets for this endpoint; they override the targets in project.yaml."
     },
     "vars": {
       "additionalProperties": true,

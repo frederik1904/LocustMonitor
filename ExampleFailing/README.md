@@ -33,3 +33,12 @@ wrong_value
 | `too_strict` | `body: exact` reporting keys the response has but the file does not; only the first three are listed |
 | `wrong_status` | a status mismatch, checked before the body |
 | `broken_chain` | an `extract` that finds nothing fails the step, and the rest of the chain is skipped |
+
+## A missed target
+
+`project.yaml` here sets a p95 target of 1 ms, which nothing can meet. A baseline run reports every
+step as having missed it and exits with code 1:
+
+```fish
+uv run perfmon run --root ExampleFailing wrong_status too_strict
+```

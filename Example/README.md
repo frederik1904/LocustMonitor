@@ -26,6 +26,18 @@ uv run perfmon run --root Example --mode limit            # raise the load step 
 uv run perfmon run --root Example get_beer browse_beers   # only these scenarios
 ```
 
+Add `--report excel` to `perfmon run` to also get a workbook in `reports/`. It opens on a dashboard
+with the findings and charts, followed by a sheet for each table: load steps, every step at every
+level of load, steps, iterations, failures, timeline and settings. Two real ones are in this folder:
+
+| File | Produced by |
+|------|-------------|
+| `sample-limit-report.xlsx` | `uv run perfmon run --root Example --mode limit --report excel browse_beers get_beer coffee_break tasting` |
+| `sample-baseline-report.xlsx` | `uv run perfmon run --root Example --report excel get_beer browse_beers coffee_break` |
+
+`project.yaml` sets `targets` (p95 and failure rate) for every endpoint, and `list_beers` overrides the
+p95 target in its `meta.yaml`. Each report says per step whether its targets were met.
+
 sampleapis.com is a free public service: keep the user count and duration low. Its data
 is shared by everyone, so the only scenario that writes (`coffee_lifecycle`) deletes what it creates;
 follow the same pattern if you add another.

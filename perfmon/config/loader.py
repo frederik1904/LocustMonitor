@@ -6,7 +6,7 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from perfmon.config.models import ConfigError, DataBinding, Endpoint, Project, Scenario, Step
-from perfmon.config.schema import BodyMatch, DataSpec, EndpointFile, ProjectFile, ScenarioFile, StepFile
+from perfmon.config.schema import BodyMatch, DataSpec, EndpointFile, ProjectFile, ScenarioFile, StepFile, Targets
 
 _YAML_SUFFIXES = (".yaml", ".yml")
 
@@ -20,7 +20,11 @@ def load_project(root: str | Path) -> Project:
     if not endpoint_dir.is_dir():
         raise ConfigError(f"{endpoint_dir}: directory not found")
 
-    endpoints = {folder.name: _load_endpoint(folder) for folder in sorted(endpoint_dir.iterdir()) if folder.is_dir()}
+    endpoints = {
+        folder.name: _load_endpoint(folder, settings.targets)
+        for folder in sorted(endpoint_dir.iterdir())
+        if folder.is_dir()
+    }
 
     scenario_dir = root / "scenarios"
     scenarios: dict[str, Scenario] = {}
@@ -31,10 +35,10 @@ def load_project(root: str | Path) -> Project:
     if not scenarios:
         raise ConfigError(f"{scenario_dir}: no scenario files (*.yaml) found, so there is nothing to run")
 
-    return Project(endpoints, scenarios, settings)
+    return Project(endpoints, scenarios, settings, name=settings.name or root.resolve().name)
 
 
-def _load_endpoint(folder: Path) -> Endpoint:
+def _load_endpoint(folder: Path, project_targets: Targets) -> Endpoint:
     meta_path = _one_of(folder, "meta")
     if meta_path is None:
         raise ConfigError(f"{folder / 'meta.yaml'}: file not found")
@@ -52,6 +56,7 @@ def _load_endpoint(folder: Path) -> Endpoint:
         request=_read(request_file),
         request_content_type=mimetypes.guess_type(request_file.name)[0] if request_file else None,
         response=_read(response_file),
+        targets=meta.targets.over(project_targets),
     )
 
 

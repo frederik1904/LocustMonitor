@@ -169,11 +169,76 @@
       },
       "title": "StopWhen",
       "type": "object"
+    },
+    "Targets": {
+      "additionalProperties": false,
+      "description": "What counts as good enough. Reports say for every step whether its targets were met.",
+      "properties": {
+        "p95_ms": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "95% of the requests must take no longer than this many milliseconds.",
+          "title": "P95 Ms"
+        },
+        "p99_ms": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "99% of the requests must take no longer than this many milliseconds.",
+          "title": "P99 Ms"
+        },
+        "error_percent": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "No more than this percentage of the requests may fail.",
+          "title": "Error Percent"
+        }
+      },
+      "title": "Targets",
+      "type": "object"
     }
   },
   "additionalProperties": false,
   "description": "project.yaml in the project folder: settings shared by every scenario. The file is optional.",
   "properties": {
+    "name": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Name of the project in reports and report file names. Defaults to the folder's name.",
+      "title": "Name"
+    },
     "host": {
       "anyOf": [
         {
@@ -187,12 +252,27 @@
       "description": "Base URL of the API, e.g. https://api.example.com. --host overrides it.",
       "title": "Host"
     },
+    "verify_tls": {
+      "default": true,
+      "description": "Check the API's TLS certificate. Set false only for a test environment with a self-signed certificate: the connection is then encrypted but the server's identity is not verified.",
+      "title": "Verify Tls",
+      "type": "boolean"
+    },
     "vars": {
       "additionalProperties": true,
       "default": {},
       "description": "Values for {{placeholders}} in every scenario. Endpoint, scenario and step vars win.",
       "title": "Vars",
       "type": "object"
+    },
+    "targets": {
+      "$ref": "#/$defs/Targets",
+      "default": {
+        "p95_ms": null,
+        "p99_ms": null,
+        "error_percent": null
+      },
+      "description": "Response-time and failure targets for every endpoint that does not set its own."
     },
     "modes": {
       "$ref": "#/$defs/ModeSettings",

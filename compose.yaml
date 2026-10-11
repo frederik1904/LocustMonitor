@@ -1,7 +1,7 @@
 # Run perfmon in a container against a project folder on this machine.
 #
 #   docker compose run --rm perfmon check
-#   docker compose run --rm perfmon run --mode limit
+#   docker compose run --rm perfmon run --mode limit --report excel
 #   PERFMON_PROJECT=./ExampleFailing docker compose run --rm perfmon check
 services:
   perfmon:
@@ -10,6 +10,8 @@ services:
     volumes:
       # The project to run; set PERFMON_PROJECT to use another folder.
       - ${PERFMON_PROJECT:-./Example}:/project:ro
+      # Report files (--report excel) end up in ./reports on this machine.
+      - ./reports:/reports
     env_file:
       # Values for {{$env.NAME}} placeholders, one NAME=value per line. The file is optional.
       - path: .env

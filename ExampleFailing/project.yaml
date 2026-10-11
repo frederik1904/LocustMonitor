@@ -1,1 +1,8 @@
+name: ExampleFailing
 host: https://api.sampleapis.com
+
+# A target no real API can meet, to show what a missed target looks like in `perfmon run`.
+targets:
+  p95_ms: 1
+modes:
+  baseline: { users: 1, duration: 5s, pacing: 1 }

@@ -7,6 +7,7 @@ import pytest
 from helpers import write
 from perfmon.cli import main
 from perfmon.config.loader import load_project
+from perfmon.modes import check
 from perfmon.modes.check import check_project
 
 
@@ -110,5 +111,20 @@ def test_a_failed_setup_skips_every_step(project: Path, host: str, capsys: pytes
 def test_host_comes_from_the_project_file_unless_given(project: Path, host: str, capsys: pytest.CaptureFixture[str]):
     assert main(["check", "ok", "--root", str(project)]) == 2
     assert "no host; set host in project.yaml or pass --host" in capsys.readouterr().err
-    write(project, "project.yaml", f"host: {host}\n")
+    write(project, "project.yaml", f"host: {host}/\n")  # a trailing slash is tolerated
     assert main(["check", "ok", "--root", str(project)]) == 0
+
+
+def test_verify_tls_reaches_the_http_session(project: Path, host: str, monkeypatch: pytest.MonkeyPatch):
+    sessions = []
+    real = check.HttpSession
+
+    def remember(*args, **kwargs):
+        sessions.append(real(*args, **kwargs))
+        return sessions[-1]
+
+    monkeypatch.setattr(check, "HttpSession", remember)
+    check_project(load_project(project), host, only=["ok"])
+    write(project, "project.yaml", "verify_tls: false\n")
+    check_project(load_project(project), host, only=["ok"])
+    assert [session.verify for session in sessions] == [True, False]

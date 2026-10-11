@@ -5,7 +5,15 @@ import pytest
 from helpers import write
 from perfmon.config.loader import load_project
 from perfmon.config.models import ConfigError, DataBinding
-from perfmon.config.schema import ApiProtocol, BodyMatch, DataMode, HttpMethod, ProjectFile, ValidationSpec
+from perfmon.config.schema import (
+    ApiProtocol,
+    BodyMatch,
+    DataMode,
+    HttpMethod,
+    ProjectFile,
+    Targets,
+    ValidationSpec,
+)
 
 
 @pytest.fixture
@@ -183,7 +191,10 @@ def test_project_file_gives_host_modes_and_the_lowest_precedence_vars(project: P
 
 
 def test_project_file_is_optional_and_checked(project: Path):
-    assert load_project(project).settings == ProjectFile()
+    loaded = load_project(project)
+    assert loaded.settings == ProjectFile() and loaded.name == project.name
+    write(project, "project.yaml", "name: shop\n")
+    assert load_project(project).name == "shop"
     write(project, "project.yaml", "modes: {baseline: {duration: soon}}\n")
     with pytest.raises(ConfigError, match="project.yaml: modes.baseline.duration: .*such as 30s, 5m or 1h"):
         load_project(project)
@@ -200,3 +211,11 @@ def test_setup_as_a_list_or_with_its_own_data(project: Path):
     )
     flow = load_project(project).scenarios["order_flow"]
     assert flow.setup_data == DataBinding(project / "data/users.csv", DataMode.SHARED, None) and flow.data is None
+
+
+def test_endpoint_targets_are_completed_by_the_project_targets(project: Path):
+    write(project, "project.yaml", "targets: {p95_ms: 800, error_percent: 1}\n")
+    write(project, "endpoints/login/meta.yaml", "method: post\npath: /login\ntargets: {p95_ms: 300, p99_ms: 900}\n")
+    endpoints = load_project(project).endpoints
+    assert endpoints["login"].targets == Targets(p95_ms=300, p99_ms=900, error_percent=1)
+    assert endpoints["create_order"].targets == Targets(p95_ms=800, error_percent=1)

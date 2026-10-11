@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from perfmon.config.schema import DataMode, EndpointFile, ProjectFile
+from perfmon.config.schema import DataMode, EndpointFile, ProjectFile, Targets
 
 
 class ConfigError(Exception):
@@ -25,6 +25,7 @@ class Endpoint:
     request: str | None
     request_content_type: str | None
     response: str | None
+    targets: Targets = field(default_factory=Targets)  # the endpoint's own, completed by the project's
 
 
 @dataclass(frozen=True)
@@ -49,3 +50,4 @@ class Project:
     endpoints: dict[str, Endpoint]
     scenarios: dict[str, Scenario]
     settings: ProjectFile = field(default_factory=ProjectFile)  # project.yaml
+    name: str = "project"  # the project folder's name, used to label reports

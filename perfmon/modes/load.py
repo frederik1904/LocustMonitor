@@ -1,117 +1,151 @@
 """Run scenarios under load with Locust, driven by a mode that decides how many users run and for how long."""
 
 import math
-from collections.abc import Callable
-from dataclasses import dataclass, field
+import time
+from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 import gevent
 from locust.env import Environment
 from locust.runners import Runner
-from locust.stats import RequestStats
 
 from perfmon.config.models import Project, Scenario
+from perfmon.config.schema import Targets
+from perfmon.reporting.base import Reporter, RequestSample
+from perfmon.reporting.summary import FailureGroup, Iterations, Measure, Phase, RunSummary, StepKey, TimeSlice
 from perfmon.runner import RunResult
 from perfmon.users import build_user_classes
 
-_STOP_TIMEOUT = 10  # seconds
-
-
-@dataclass
-class Iterations:
-    """How the iterations of a scenario ended.
-
-    An iteration is incomplete when one of its steps failed. The steps after it are never
-    sent, so they appear in no request statistic and are counted here instead.
-    """
-
-    total: int = 0
-    incomplete: int = 0
-    steps_not_sent: int = 0
-    setups_failed: int = 0  # virtual users that stopped because their setup failed
-
-    def add(self, result: RunResult, is_setup: bool) -> None:
-        if is_setup:
-            self.setups_failed += not result.passed
-            return
-        self.total += 1
-        self.incomplete += not result.passed
-        self.steps_not_sent += len(result.skipped)
-
-    @property
-    def incomplete_percent(self) -> float:
-        return 100 * self.incomplete / self.total if self.total else 0.0
-
-
-@dataclass
-class Window:
-    """The requests and iterations completed since the previous window was taken."""
-
-    response_times: list[float] = field(default_factory=list)
-    failures: int = 0
-    iterations: Iterations = field(default_factory=Iterations)
-
-    @property
-    def requests(self) -> int:
-        return len(self.response_times)
-
-    @property
-    def error_percent(self) -> float:
-        return 100 * self.failures / self.requests if self.requests else 0.0
-
-    def percentile(self, fraction: float) -> float:
-        ordered = sorted(self.response_times)
-        return ordered[max(0, math.ceil(fraction * len(ordered)) - 1)] if ordered else 0.0
+_STOP_TIMEOUT = 10  # seconds a stopping user gets to finish its iteration
+_SLICE_SECONDS = 5  # resolution of the timeline while the run is going
+_TIMELINE_POINTS = 120  # the timeline is thinned to at most this many points for the reports
+_FAILURE_GROUPS = 200  # distinct failures kept apart; further ones are counted together
 
 
 class LoadControl:
-    """What a mode can do to the running test."""
+    """What a mode can do to the running test, and the place where its measurements are gathered."""
 
-    def __init__(self, runner: Runner, scenario_count: int, say: Callable[[str], None]) -> None:
+    def __init__(self, runner: Runner, scenario_count: int, pacing: float, say: Callable[[str], None]) -> None:
         self._runner = runner
-        self._window = Window()
-        self.iterations: dict[str, Iterations] = {}  # per scenario, over the whole run
+        self._pacing = pacing
+        self._clock = time.monotonic()
+        self._phase: Phase | None = None
+        self._slices: dict[int, TimeSlice] = {}
+        self._failures: dict[tuple[Any, ...], FailureGroup] = {}
+        self.steps: dict[StepKey, Measure] = {}
+        self.iterations: dict[str, Iterations] = {}
+        self.phases: list[Phase] = []
         self.scenario_count = scenario_count
         self.say = say
 
-    def record(self, response_time: float, exception: Any, **_: Any) -> None:
-        self._window.response_times.append(response_time)
-        self._window.failures += exception is not None
+    @property
+    def elapsed(self) -> float:
+        return time.monotonic() - self._clock
 
-    def observe(self, scenario: Scenario, result: RunResult, is_setup: bool) -> None:
-        self._window.iterations.add(result, is_setup)
-        self.iterations.setdefault(scenario.name, Iterations()).add(result, is_setup)
+    @property
+    def failures(self) -> list[FailureGroup]:
+        return sorted(self._failures.values(), key=lambda group: (group.key, -group.occurrences))
 
-    def set_users(self, total: int) -> None:
-        """Raise the number of virtual users to total; the new ones start within about a second."""
-        self._runner.start(total, spawn_rate=max(1, total - self._runner.user_count))
+    # --- what a mode calls ---
+
+    def begin_step(self, users: int) -> None:
+        """Bring the number of virtual users to `users` (new ones start within about a second) and
+        start measuring this level of load."""
+        self._runner.start(users, spawn_rate=max(1, users - self._runner.user_count))
+        intended = users / self._pacing if self._pacing else None
+        self._phase = Phase(users=users, started_seconds=self.elapsed, intended_iterations_per_second=intended)
 
     def wait(self, seconds: float) -> None:
         gevent.sleep(seconds)
 
-    def take_window(self) -> Window:
-        window, self._window = self._window, Window()
-        return window
+    def end_step(self, verdict: str = "") -> Phase:
+        """Stop measuring this level of load and return what happened during it."""
+        phase = self._phase
+        if phase is None:
+            raise RuntimeError("end_step() without begin_step()")
+        phase.duration_seconds = self.elapsed - phase.started_seconds
+        phase.verdict = verdict
+        self.phases.append(phase)
+        self._phase = None
+        return phase
+
+    # --- what the running test reports ---
+
+    def record(
+        self, request_type: str, name: str, response_time: float, response: Any, exception: Any, **_: Any
+    ) -> None:
+        key = StepKey(*_split(name), request_type)
+        failed = exception is not None
+        self.steps.setdefault(key, Measure()).record(response_time, failed)
+        if self._phase:
+            self._phase.total.record(response_time, failed)
+            self._phase.steps.setdefault(key, Measure()).record(response_time, failed)
+        index = int(self.elapsed // _SLICE_SECONDS)
+        if index not in self._slices:
+            self._slices[index] = TimeSlice(index * _SLICE_SECONDS, _SLICE_SECONDS, self._runner.user_count)
+        self._slices[index].measure.record(response_time, failed)
+        if failed:
+            self._note_failure(key, getattr(response, "status_code", 0) or None, str(exception))
+
+    def observe(self, scenario: Scenario, result: RunResult, is_setup: bool, seconds: float) -> None:
+        self.iterations.setdefault(scenario.name, Iterations()).add(result, is_setup, seconds)
+        if self._phase:
+            self._phase.iterations.add(result, is_setup, seconds)
+
+    def _note_failure(self, key: StepKey, status: int | None, message: str) -> None:
+        group = (key, status, message)
+        if group not in self._failures and len(self._failures) >= _FAILURE_GROUPS:
+            group, status, message = (key, None, "other"), None, "(further distinct failures of this step)"
+        if group in self._failures:
+            self._failures[group].occurrences += 1
+            return
+        users = self._phase.users if self._phase else self._runner.user_count
+        self._failures[group] = FailureGroup(key, _kind(status, message), status, message, 1, self.elapsed, users)
+
+    def timeline(self) -> list[TimeSlice]:
+        """The run in time order, thinned by merging neighbours so long runs stay chartable."""
+        slices = [self._slices[index] for index in sorted(self._slices)]
+        stride = math.ceil(len(slices) / _TIMELINE_POINTS)
+        if stride <= 1:
+            return slices
+        merged = []
+        for start in range(0, len(slices), stride):
+            group = slices[start : start + stride]
+            combined = TimeSlice(group[0].start_seconds, stride * _SLICE_SECONDS, max(piece.users for piece in group))
+            for piece in group:
+                combined.measure.merge(piece.measure)
+            merged.append(combined)
+        return merged
+
+
+def _kind(status: int | None, message: str) -> str:
+    """Sort a failure into a kind, from the status and the messages the runner writes."""
+    if status is None:
+        return "no response"
+    if message.startswith("body:") or message.startswith("response file"):
+        return "body mismatch"
+    if message.startswith("extract"):
+        return "extract failed"
+    return "unexpected status"
 
 
 class LoadMode(Protocol):
     """A way of applying load: how users are paced and how their number changes over the run."""
 
+    name: str
     pacing: float  # seconds between the starts of a user's iterations
     users_per_scenario: int | None  # pin every scenario to this many users instead of sharing them by weight
     failures_fail_the_run: bool
     check_bodies: bool  # compare response bodies as the endpoints' validate blocks ask, or judge on status alone
 
-    def drive(self, load: LoadControl) -> list[str]:
-        """Apply the load from start to finish; return the mode's own findings as lines of text."""
+    def settings(self) -> dict[str, Any]:
+        """How the mode is configured, as label and value, for the reports."""
         ...
 
-
-@dataclass(frozen=True)
-class LoadReport:
-    text: str
-    requests: int
-    failures: int
+    def drive(self, load: LoadControl) -> list[str]:
+        """Apply the load from start to finish; return what the mode concluded, as sentences."""
+        ...
 
 
 def run_load(
@@ -119,9 +153,13 @@ def run_load(
     host: str,
     mode: LoadMode,
     only: list[str] | None = None,
+    reporters: Sequence[Reporter] = (),
     say: Callable[[str], None] = print,
-) -> LoadReport:
-    """Run the named scenarios (default: all) against host the way the mode prescribes."""
+) -> RunSummary:
+    """Run the named scenarios (default: all) against host the way the mode prescribes.
+
+    Reporters see every request as it finishes; handing them the returned summary is up to the caller.
+    """
     # The user classes report to the control, which needs the runner, which needs the user classes.
     control: list[LoadControl] = []
     user_classes = build_user_classes(
@@ -131,74 +169,104 @@ def run_load(
         pacing=mode.pacing,
         users_per_scenario=mode.users_per_scenario,
         check_bodies=mode.check_bodies,
-        observe=lambda scenario, result, is_setup: control[0].observe(scenario, result, is_setup),
+        observe=lambda scenario, result, is_setup, seconds: control[0].observe(scenario, result, is_setup, seconds),
     )
     # stop_timeout lets a user finish the iteration it is in, so a chain's clean-up steps still run.
     environment = Environment(user_classes=list(user_classes.values()), host=host, stop_timeout=_STOP_TIMEOUT)
     runner = environment.create_local_runner()
-    load = LoadControl(runner, len(user_classes), say)
+    load = LoadControl(runner, len(user_classes), mode.pacing, say)
     control.append(load)
     environment.events.request.add_listener(load.record)
+    if reporters:
+        environment.events.request.add_listener(_streamer(reporters))
+
+    started = datetime.now(UTC)
     try:
         findings = mode.drive(load)
     finally:
         runner.quit()
-    stats = environment.stats
-    text = "\n".join([*findings, "", format_stats(stats), "", format_iterations(load.iterations)]).strip()
-    return LoadReport(text, stats.total.num_requests, stats.total.num_failures)
+
+    scenarios = [project.scenarios[name] for name in user_classes]
+    summary = RunSummary(
+        project=project.name,
+        mode=mode.name,
+        host=host,
+        started=started,
+        duration_seconds=load.elapsed,
+        settings=mode.settings()
+        | {
+            "Response bodies checked": "yes" if mode.check_bodies else "no, status codes only",
+            "TLS certificates verified": "yes" if project.settings.verify_tls else "no (verify_tls: false)",
+            "Scenarios": ", ".join(f"{scenario.name} (weight {scenario.weight})" for scenario in scenarios),
+        },
+        findings=findings,
+        steps=dict(sorted(load.steps.items())),
+        targets=_targets(scenarios),
+        failures=load.failures,
+        iterations=load.iterations,
+        phases=load.phases,
+        timeline=load.timeline(),
+    )
+    summary.findings.extend(_target_findings(summary))
+    return summary
 
 
-def _table(rows: list[tuple[str, ...]]) -> list[str]:
-    """Rows as aligned text: the first column left-aligned, the numbers right-aligned."""
-    widths = [max(len(row[column]) for row in rows) for column in range(len(rows[0]))]
-    return [
-        "  ".join(
-            cell.ljust(width) if column == 0 else cell.rjust(width)
-            for column, (cell, width) in enumerate(zip(row, widths, strict=True))
-        )
-        for row in rows
-    ]
+def run_failed(mode: LoadMode, summary: RunSummary) -> bool:
+    """Whether the run should count as failed, for the command's exit code.
+
+    Only for modes where failures are not the point: a missed target fails the run, and so does
+    a failed request in a step that sets no failure target of its own to judge it by.
+    """
+    if not mode.failures_fail_the_run:
+        return False
+    if summary.steps_missing_targets():
+        return True
+    return any(
+        measure.failures and summary.targets.get(key, Targets()).error_percent is None
+        for key, measure in summary.steps.items()
+    )
 
 
-def format_stats(stats: RequestStats) -> str:
-    """Requests, failures and response times per step, then the distinct failure messages."""
-    rows: list[tuple[str, ...]] = [("Step", "Requests", "Failures", "p50 ms", "p95 ms", "p99 ms", "Avg ms", "Req/s")]
-    for entry in sorted(stats.entries.values(), key=lambda entry: entry.name):
-        rows.append(
-            (
-                f"{entry.method} {entry.name}",
-                str(entry.num_requests),
-                str(entry.num_failures),
-                f"{entry.get_response_time_percentile(0.50):.0f}",
-                f"{entry.get_response_time_percentile(0.95):.0f}",
-                f"{entry.get_response_time_percentile(0.99):.0f}",
-                f"{entry.avg_response_time:.0f}",
-                f"{entry.total_rps:.1f}",
-            )
-        )
-    lines = _table(rows)
-    if stats.errors:
-        lines += ["", "Failures:"]
-        lines += [
-            f"  {error.occurrences} x {error.method} {error.name}: {error.error}" for error in stats.errors.values()
-        ]
-    return "\n".join(lines)
+def _targets(scenarios: list[Scenario]) -> dict[StepKey, Targets]:
+    return {
+        StepKey(scenario.name, step.name, step.endpoint.meta.method.value): step.endpoint.targets
+        for scenario in scenarios
+        for step in scenario.setup + scenario.steps
+    }
 
 
-def format_iterations(iterations: dict[str, Iterations]) -> str:
-    """Per scenario: iterations run, how many stopped at a failed step, and the requests that were never sent."""
-    rows: list[tuple[str, ...]] = [("Scenario", "Iterations", "Incomplete", "Incomplete %", "Steps not sent")]
-    for name, count in sorted(iterations.items()):
-        rows.append(
-            (
-                name,
-                str(count.total),
-                str(count.incomplete),
-                f"{count.incomplete_percent:.1f}",
-                str(count.steps_not_sent),
-            )
-        )
-    lines = _table(rows)
-    stopped = {name: count.setups_failed for name, count in sorted(iterations.items()) if count.setups_failed}
-    lines += [f"{name}: {users} virtual user(s) stopped because their setup failed" for name, users in stopped.items()]
-    return "\n".join(lines)
+def _target_findings(summary: RunSummary) -> list[str]:
+    """What the run says about the targets: over the whole run, and for a stepped run up to which load."""
+    if not summary.has_targets:
+        return []
+    if len(summary.phases) > 1:
+        met = 0
+        for phase in summary.phases:
+            if summary.steps_missing_targets(phase.steps):
+                break
+            met = phase.users
+        highest = summary.phases[-1].users
+        if met == highest:
+            return [f"Every target was met at every level of load, up to {highest} users."]
+        return [f"Every target was met up to {met} users." if met else "The targets were not met at any level of load."]
+    missed = summary.steps_missing_targets()
+    measured = sum(1 for key in summary.steps if summary.target_verdict(key, summary.steps[key]))
+    if not missed:
+        return [f"Every target was met ({measured} step(s) with targets)."]
+    return [f"{len(missed)} of {measured} step(s) with targets missed them: " + ", ".join(key.label for key in missed)]
+
+
+def _streamer(reporters: Sequence[Reporter]) -> Callable[..., None]:
+    def on_request(request_type: str, name: str, response_time: float, exception: Any, **_: Any) -> None:
+        scenario, step = _split(name)
+        sample = RequestSample(scenario, step, request_type, response_time, str(exception) if exception else None)
+        for reporter in reporters:
+            reporter.on_request(sample)
+
+    return on_request
+
+
+def _split(stats_name: str) -> tuple[str, str]:
+    """The runner labels requests "scenario/step"; a step's own name may contain further slashes."""
+    scenario, _, step = stats_name.partition("/")
+    return scenario, step

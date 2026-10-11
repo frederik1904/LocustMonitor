@@ -86,6 +86,24 @@ _VARS = (
 _DATA = "One row of placeholder values per iteration: a CSV path, or a mapping with file and mode."
 
 
+class Targets(_FileModel):
+    """What counts as good enough. Reports say for every step whether its targets were met."""
+
+    p95_ms: float | None = Field(
+        default=None, gt=0, description="95% of the requests must take no longer than this many milliseconds."
+    )
+    p99_ms: float | None = Field(
+        default=None, gt=0, description="99% of the requests must take no longer than this many milliseconds."
+    )
+    error_percent: float | None = Field(
+        default=None, ge=0, le=100, description="No more than this percentage of the requests may fail."
+    )
+
+    def over(self, defaults: Targets) -> Targets:
+        """These targets, with the defaults filling in whatever is not set here."""
+        return Targets(**(defaults.model_dump(exclude_none=True) | self.model_dump(exclude_none=True)))
+
+
 class EndpointFile(_FileModel):
     """An endpoint's meta.yaml. Endpoints are building blocks: only scenarios run."""
 
@@ -106,6 +124,10 @@ class EndpointFile(_FileModel):
         default=None,
         alias="validate",
         description="Checks on the response. Without it, only connection errors and status >= 400 fail.",
+    )
+    targets: Targets = Field(
+        default=Targets(),
+        description="Response-time and failure targets for this endpoint; they override the targets in project.yaml.",
     )
     vars: dict[str, Any] = Field(default={}, description=_VARS)
 
@@ -237,10 +259,26 @@ class ModeSettings(_FileModel):
 class ProjectFile(_FileModel):
     """project.yaml in the project folder: settings shared by every scenario. The file is optional."""
 
+    name: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Name of the project in reports and report file names. Defaults to the folder's name.",
+    )
     host: str | None = Field(
         default=None, description="Base URL of the API, e.g. https://api.example.com. --host overrides it."
     )
+    verify_tls: bool = Field(
+        default=True,
+        description=(
+            "Check the API's TLS certificate. Set false only for a test environment with a self-signed "
+            "certificate: the connection is then encrypted but the server's identity is not verified."
+        ),
+    )
     vars: dict[str, Any] = Field(
         default={}, description="Values for {{placeholders}} in every scenario. Endpoint, scenario and step vars win."
+    )
+    targets: Targets = Field(
+        default=Targets(),
+        description="Response-time and failure targets for every endpoint that does not set its own.",
     )
     modes: ModeSettings = Field(default=ModeSettings(), description="Settings for `perfmon run --mode ...`.")

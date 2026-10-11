@@ -1,10 +1,14 @@
+from typing import Any
+
 from perfmon.config.schema import LimitSettings, StopWhen
-from perfmon.modes.load import LoadControl, Window
+from perfmon.modes.load import LoadControl
+from perfmon.reporting.summary import Measure
 
 
 class Limit:
     """Load raised in steps until the API fails or slows down beyond the configured thresholds."""
 
+    name = "limit"
     failures_fail_the_run = False  # failures are what this mode is looking for
     check_bodies = False  # only whether the API still answers matters here, and comparing costs CPU
     users_per_scenario: int | None = None
@@ -12,6 +16,19 @@ class Limit:
     def __init__(self, settings: LimitSettings) -> None:
         self._settings = settings
         self.pacing = settings.pacing
+
+    def settings(self) -> dict[str, Any]:
+        settings = self._settings
+        stop_when = settings.stop_when
+        return {
+            "Users in the first step": settings.start_users,
+            "Users added per step": settings.step_users,
+            "Most users tried": settings.max_users,
+            "Step duration (s)": settings.step_duration,
+            "Pacing (s between iteration starts)": settings.pacing,
+            "Stop when failed requests exceed (%)": stop_when.error_percent,
+            "Stop when p95 exceeds (ms)": stop_when.p95_ms if stop_when.p95_ms is not None else "not set",
+        }
 
     def drive(self, load: LoadControl) -> list[str]:
         settings = self._settings
@@ -22,16 +39,16 @@ class Limit:
         healthy = 0
         users = settings.start_users
         while users <= settings.max_users:
-            load.set_users(users)
+            load.begin_step(users)
             load.wait(settings.step_duration)
-            window = load.take_window()
-            iterations = window.iterations
+            step = load.end_step()
+            reason = _breach(step.total, settings.stop_when)
+            step.verdict = reason or "healthy"
             load.say(
-                f"  {users:>5} users: {window.requests} requests, {window.error_percent:.1f}% failed, "
-                f"p95 {window.percentile(0.95):.0f} ms, {iterations.incomplete} of {iterations.total} iterations "
-                f"incomplete ({iterations.steps_not_sent} steps not sent)"
+                f"  {users:>5} users: {step.requests_per_second:.1f} req/s, {step.total.failure_percent:.1f}% failed, "
+                f"p50 {step.total.p50:.0f} / p95 {step.total.p95:.0f} / p99 {step.total.p99:.0f} ms, "
+                f"{step.iterations.incomplete} of {step.iterations.total} iterations incomplete"
             )
-            reason = _breach(window, settings.stop_when)
             if reason:
                 last = f"the last healthy step was {healthy} users" if healthy else "no step was healthy"
                 return [f"Limit reached at {users} users: {reason}; {last}."]
@@ -40,13 +57,12 @@ class Limit:
         return [f"No limit found: still healthy at {healthy} users, the highest step within max_users."]
 
 
-def _breach(window: Window, stop_when: StopWhen) -> str | None:
+def _breach(step: Measure, stop_when: StopWhen) -> str | None:
     """Why this step counts as over the limit, or None if it was healthy."""
-    if window.requests == 0:
+    if step.requests == 0:
         return "no request completed during the step"
-    if window.error_percent > stop_when.error_percent:
-        return f"{window.error_percent:.1f}% of requests failed (threshold {stop_when.error_percent:g}%)"
-    p95 = window.percentile(0.95)
-    if stop_when.p95_ms is not None and p95 > stop_when.p95_ms:
-        return f"p95 was {p95:.0f} ms (threshold {stop_when.p95_ms:g} ms)"
+    if step.failure_percent > stop_when.error_percent:
+        return f"{step.failure_percent:.1f}% of requests failed (threshold {stop_when.error_percent:g}%)"
+    if stop_when.p95_ms is not None and step.p95 > stop_when.p95_ms:
+        return f"p95 was {step.p95:.0f} ms (threshold {stop_when.p95_ms:g} ms)"
     return None

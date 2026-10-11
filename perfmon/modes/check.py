@@ -10,6 +10,7 @@ from perfmon.config.models import Project
 from perfmon.data.pool import DataPool
 from perfmon.runner import run_scenario, run_setup
 from perfmon.template import TemplateError
+from perfmon.users import accept_unverified_certificates
 
 
 @dataclass(frozen=True)
@@ -46,9 +47,12 @@ def check_project(project: Project, host: str, only: list[str] | None = None) ->
     request_event = EventHook()
     request_event.add_listener(record)
     pool = DataPool(project)
+    if not project.settings.verify_tls:
+        accept_unverified_certificates()
     for name in only or sorted(project.scenarios):
         current = name
         client = HttpSession(host, request_event, user=None)
+        client.verify = project.settings.verify_tls
         scenario = project.scenarios[name]
         try:
             setup = run_setup(scenario, client, pool.next_setup_row(scenario))

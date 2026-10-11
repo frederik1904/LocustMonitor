@@ -6,3 +6,5 @@ extract:
   beer_id: $[2].id        # the third beer in the list, picked up by get_beer in a chain
 validate:
   status: 200
+targets:
+  p95_ms: 5000            # a long list; overrides the project's p95 target, the failure target still applies

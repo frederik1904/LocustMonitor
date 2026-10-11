@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from locust import HttpUser
+from locust.env import Environment
 
 from helpers import write
 from perfmon.config.loader import load_project
@@ -250,3 +251,12 @@ def test_one_user_class_per_scenario(project: Path):
     assert sorted(classes) == ["flow", "order", "ping"]
     assert all(issubclass(cls, HttpUser) and not cls.abstract for cls in classes.values())
     assert classes["flow"].weight == 4 and classes["flow"].__name__ == "flow"
+
+
+def test_users_carry_the_project_tls_setting(project: Path):
+    for setting, expected in (("", True), ("verify_tls: false\n", False)):
+        write(project, "project.yaml", "host: http://127.0.0.1:9\n" + setting)
+        user_class = build_user_classes(load_project(project))["ping"]
+        user = user_class(Environment(user_classes=[user_class]))
+        user.on_start()
+        assert user.client.verify is expected

@@ -39,7 +39,7 @@ functional endpoint checks, driven by folders of YAML and request/response files
 | 5a | Review fixes: correctness of results | Done |
 | 5b | Review cleanup: code quality | Done |
 | 6 | Project file, `perfmon run`, `baseline` and `limit` modes | Done |
-| 7 | Reporter interface and Excel reporter | Todo |
+| 7 | Reporter interface and Excel reporter | Done |
 | 8 | Ergonomics and docs | Todo |
 | 9 | Generate endpoint folders from OpenAPI | Todo |
 
@@ -140,15 +140,39 @@ Found in the same review. No behaviour change.
 - [ ] Later, if needed: command-line overrides for mode settings (`--users`, `--duration`); a warm-up
       period excluded from a limit step; baseline thresholds that fail the run (a regression gate).
 
-### 7. Reporting
+### 7. Reporting (done)
 
-- [ ] Create `perfmon/reporting/` with `base.py` (`Reporter` interface) and `excel.py`.
-- [ ] Container: reports need a writable output folder (the project is mounted read-only); add a
-      `reports` volume to `compose.yaml`.
-- [ ] Interface has two hooks: `on_request` (streaming, must not block) and `on_test_end(stats)` (summary).
-- [ ] Excel reporter (`openpyxl`): one summary sheet with per-endpoint counts, failures and percentiles.
+Readers: developers looking for a bottleneck, and people checking a contract (were the targets met?).
+
+- [x] `perfmon/reporting/`: `base.py` (`Reporter` interface), `summary.py` (the run as plain data),
+      `console.py` and `excel.py`.
+- [x] The interface has two hooks: `on_request` (every request as it finishes; must not block) and
+      `on_end(summary)`. The terminal output is a reporter too, fed from the same summary.
+- [x] `perfmon run --report excel [--report-dir DIR]` writes `<project>-<mode>-<start time>.xlsx`.
+- [x] **Our own measurements instead of Locust's cumulative statistics:** per step, per level of load
+      and per time slice, kept as counts per rounded response time so memory does not grow with the run.
+- [x] **Load steps in full:** requests/s, intended and achieved iterations/s, failed %, p50/p95/p99/max,
+      iterations, incomplete, steps not sent, targets met, verdict.
+- [x] **Every step at every level of load** (sheet "Steps by load"): which endpoint bends first.
+- [x] **Failures by kind and status code**, with when and at how many users each was first seen.
+- [x] **Iteration time per scenario:** p50, p95 and max of a complete iteration.
+- [x] **Timeline:** users, requests/s, failed %, p50 and p95 over the run.
+- [x] **Run settings** in the report (mode settings, thresholds, scenarios and weights).
+- [x] **Targets:** `targets: {p95_ms, p99_ms, error_percent}` in `project.yaml` (default for every
+      endpoint) and in `meta.yaml` (overrides per key). Reports say per step whether they were met; a
+      limit run says up to which load they held; a baseline run exits 1 when one is missed.
+- [x] **Dashboard sheet with charts:** for a limit run, response time by load, failed requests and
+      incomplete iterations by load, intended and achieved iterations/s, p95 by load for the slowest
+      steps; for a baseline, p95 per step beside its target; for both, response time, requests/s and
+      failed % over the run. It prints one page wide.
+- [x] Container: `/reports` is the report folder (`PERFMON_REPORT_DIR`), mounted from `./reports`.
+- [x] Example: `Example/sample-limit-report.xlsx` and `sample-baseline-report.xlsx`; targets in
+      `Example/project.yaml` and `list_beers`; a target that is missed in `ExampleFailing/`.
+- [x] Editor support: descriptions for `targets`; schemas regenerated.
 - [ ] Later: LGTM reporter; decide between Prometheus remote-write, OTLP and Loki at that point.
-- [ ] Example: a sample Excel report produced from an example run, with the command in the README.
+- [ ] Later, if needed: reports for `perfmon check`; choosing reporters in `project.yaml`; targets per
+      step of a scenario; response size; load-generator CPU in the report.
+- Decided against: comparing with earlier runs. Nothing is stored between runs.
 
 ### 8. Ergonomics and docs
 
@@ -297,7 +321,13 @@ Not planned as steps; listed so they are not forgotten.
   the arguments are the same as on the command line, and exit codes pass through for CI. *Why:* one
   image serves every project, and editing a scenario needs no rebuild. It runs as a non-root user,
   and `host.docker.internal` reaches an API on the machine running Docker.
-- **Exit codes of `perfmon run`:** baseline exits 1 if any request failed; limit exits 0 whether or not
+- **`verify_tls: false` in `project.yaml` skips the certificate check**, for test environments with a
+  self-signed certificate. It is off unless set, the commands print a note when it is used, and the
+  report's Settings sheet records it. *Why in the project file and not a command-line flag:* it is a
+  property of the environment being tested, and it should be visible to whoever reads the project.
+- **A trailing slash on `host` is ignored**, since every path starts with one.
+- **Exit codes of `perfmon run`:** baseline exits 1 if a target was missed, or if a request failed in a
+  step that sets no failure target of its own; limit exits 0 whether or not
   it found the limit, because failures are what it is looking for. 2 is a configuration error.
 - **Setup values rank below the iteration's own row:** step vars < setup row and extracts < iteration
   row < iteration extracts. *Why:* the more recent and more specific value wins.
@@ -333,6 +363,21 @@ Not planned as steps; listed so they are not forgotten.
 - **Sequential modes wrap at the end of the file.** *Why:* the simplest way to keep runs consistent
   and repeatable.
 - **Single-process first.** The cursor sits behind `DataSource` so distributed runs can be added later.
+- **Reporters receive a `RunSummary`, not Locust's statistics.** *Why:* a reporter then needs to know
+  nothing about Locust, can be tested with hand-made data, and the terminal output, the spreadsheet
+  and a future LGTM exporter all describe the same numbers.
+- **The console is always on; file reporters are opt-in with `--report`.**
+- **Measurements are our own, gathered per step, per level of load and per time slice.** *Why:* Locust's
+  statistics are cumulative for the whole run, which cannot show which endpoint slowed down at which
+  load. Response times are counted per rounded value (two to three significant digits), so percentiles
+  are slightly rounded and memory stays flat however long the run is.
+- **Targets are separate from `stop_when`.** Targets say what is good enough (the contract);
+  `stop_when` says when a limit run should give up. A limit run reports both: up to which load the
+  targets held, and where the API gave way.
+- **Charts never share two scales on one axis.** Measures in different units get a chart each, side by
+  side, with the same x axis. Colours come from a fixed set checked for colour-blind separation; every
+  chart's numbers are also in a table sheet.
+- **A chart shows at most six lines** (the slowest steps); the rest are in the tables.
 - **Excel first for reporting.** The LGTM transport question is deferred. *Why:* the strategy interface
   isolates it; only the two-hook shape has to be right now.
 - **Subset lists are compared from the start.** The expected items must match the first items of the
@@ -348,7 +393,10 @@ Not planned as steps; listed so they are not forgotten.
 
 ```yaml
 # project.yaml (optional)
+name: shop                             # in reports; default is the folder name
 host: https://api.example.com
+targets: { p95_ms: 800, error_percent: 1 }   # for every endpoint; also p99_ms
+verify_tls: false                      # only for a test environment with a self-signed certificate
 vars: { tenant: acme }                 # lowest precedence
 modes:
   baseline: { users: 1, duration: 60s, pacing: 1 }
@@ -370,6 +418,7 @@ query: { expand: "{{expand}}" }          # a null value is not sent
 headers: { Authorization: "Bearer {{token}}", X-Api-Key: "{{$env.API_KEY}}" }
 extract: { order_id: $.id }            # JSONPath into the response, for later steps
 validate: { status: 201, body: subset } # body: none | subset | exact, compared with response.*
+targets: { p95_ms: 300 }               # overrides the project's targets, key by key
 vars: { quantity: 1 }
 ```
 
@@ -396,6 +445,7 @@ uv run ruff check . && uv run ruff format --check . && uv run pyright
 uv run perfmon check --root Example
 uv run perfmon run --root Example                 # baseline
 uv run perfmon run --root Example --mode limit
+uv run perfmon run --root Example --mode limit --report excel   # also writes reports/<name>.xlsx
 ```
 
 In a container (the project folder is mounted read-only at `/project`; `PERFMON_PROJECT` picks it,
@@ -404,7 +454,7 @@ default `./Example`; an optional `.env` file supplies `{{$env.NAME}}` values):
 ```fish
 docker compose build
 docker compose run --rm perfmon check
-docker compose run --rm perfmon run --mode limit
+docker compose run --rm perfmon run --mode limit --report excel   # written to ./reports
 PERFMON_PROJECT=./ExampleFailing docker compose run --rm perfmon check
 docker run --rm -v "$PWD/Example:/project:ro" perfmon check        # without compose
 ```

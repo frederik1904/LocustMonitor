@@ -1,5 +1,12 @@
 # Settings shared by every scenario in this project.
+name: Example             # used in reports; defaults to the folder name
 host: https://api.sampleapis.com
+
+# What counts as good enough, for every endpoint that does not set its own. Reports say per step
+# whether the targets were met, and a baseline run fails when they are not.
+targets:
+  p95_ms: 2000
+  error_percent: 1
 
 # sampleapis.com is a free public service, so both modes are kept very small here.
 modes:

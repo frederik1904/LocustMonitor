@@ -11,9 +11,10 @@ RUN uv sync --frozen --no-dev --no-editable
 
 # Run stage: only Python and the virtual environment.
 FROM python:3.14-slim
-RUN useradd --create-home perfmon
+# /reports is where report files are written; mount a folder there to keep them.
+RUN useradd --create-home perfmon && mkdir /reports && chown perfmon /reports
 COPY --from=build /app/.venv /app/.venv
-ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
+ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PERFMON_REPORT_DIR=/reports
 USER perfmon
 # The project folder (endpoints/, scenarios/, project.yaml) is mounted here.
 WORKDIR /project

@@ -5,6 +5,7 @@ requires-python = ">=3.14"
 dependencies = [
     "jsonpath-ng>=1.10.0",
     "locust>=2.46.7",
+    "openpyxl>=3.1.5",
     "pydantic>=2.14.0",
     "pyyaml>=6.0.3",
 ]

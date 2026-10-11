@@ -1,9 +1,13 @@
 import argparse
+import os
 import sys
 from pathlib import Path
 
 from perfmon.config.models import ConfigError, Project
 from perfmon.project import open_project
+
+# Kept here as plain names so that --help does not have to import Locust and the report libraries.
+REPORT_NAMES = ["excel"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -17,6 +21,18 @@ def main(argv: list[str] | None = None) -> int:
         choices=["baseline", "limit"],
         default="baseline",
         help="baseline: steady light load; limit: raise the load until the API gives way (default: baseline)",
+    )
+    run.add_argument(
+        "--report",
+        action="append",
+        default=[],
+        choices=REPORT_NAMES,
+        help="also write the results in this format; may be given more than once",
+    )
+    run.add_argument(
+        "--report-dir",
+        default=os.environ.get("PERFMON_REPORT_DIR", "reports"),
+        help="folder for report files (default: reports, or $PERFMON_REPORT_DIR)",
     )
     for command in (check, run):
         command.add_argument("scenarios", nargs="*", help="scenarios to run (default: all)")
@@ -38,6 +54,8 @@ def main(argv: list[str] | None = None) -> int:
         project = open_project(args.root)
         host = _host(project, args.host, args.root)
         _known(project, args.scenarios)
+        if not project.settings.verify_tls:
+            print("Note: verify_tls is false, so the API's TLS certificate is not checked.", file=sys.stderr)
         # Imported late: Locust patches the standard library on import.
         if args.command == "check":
             from perfmon.modes.check import check_project, format_report
@@ -48,13 +66,19 @@ def main(argv: list[str] | None = None) -> int:
 
         from perfmon.modes.baseline import Baseline
         from perfmon.modes.limit import Limit
-        from perfmon.modes.load import run_load
+        from perfmon.modes.load import run_failed, run_load
+        from perfmon.reporting import REPORTERS
+        from perfmon.reporting.console import ConsoleReporter
 
         modes = project.settings.modes
         mode = Baseline(modes.baseline) if args.mode == "baseline" else Limit(modes.limit)
-        report = run_load(project, host, mode, args.scenarios)
-        print(report.text)
-        return 1 if mode.failures_fail_the_run and report.failures else 0
+        reporters = [ConsoleReporter(), *(REPORTERS[name](Path(args.report_dir)) for name in args.report)]
+        summary = run_load(project, host, mode, args.scenarios, reporters)
+        for reporter in reporters:
+            written = reporter.on_end(summary)
+            if written:
+                print(f"\n{written}")
+        return 1 if run_failed(mode, summary) else 0
     except ConfigError as error:
         print(f"Configuration error: {error}", file=sys.stderr)
         return 2
@@ -64,7 +88,7 @@ def _host(project: Project, given: str | None, root: str) -> str:
     host = given or project.settings.host
     if not host:
         raise ConfigError(f"{root}: no host; set host in project.yaml or pass --host")
-    return host
+    return host.rstrip("/")  # paths start with a slash, so one at the end of the host would double it
 
 
 def _known(project: Project, names: list[str]) -> None:
