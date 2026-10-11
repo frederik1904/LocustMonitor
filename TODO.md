@@ -33,7 +33,9 @@ functional endpoint checks, driven by folders of YAML and request/response files
 | 3 | `check` mode (functional endpoint testing) | Done |
 | 4 | Chaining (`extract`) and CSV data source | Done |
 | 5 | Response validation (`subset` / `exact`) | Done |
-| 6 | `baseline` and `limit` modes | Todo |
+| 5a | Review fixes: correctness of results | Todo |
+| 5b | Review cleanup: code quality | Todo |
+| 6 | Project file, `perfmon run`, `baseline` and `limit` modes | Todo |
 | 7 | Reporter interface and Excel reporter | Todo |
 | 8 | Ergonomics and docs | Todo |
 | 9 | Generate endpoint folders from OpenAPI | Todo |
@@ -80,15 +82,63 @@ functional endpoint checks, driven by folders of YAML and request/response files
 - [x] Editor support: `validate.body` description updated; schemas regenerated.
 - [ ] Later, if needed: `body: schema` (JSON Schema), and a way to match list items in any order.
 
-### 6. Modes (load shapes)
+### 5a. Review fixes: correctness of results
+
+Found in the code review after step 5. Do these before step 6; they affect whether results can be trusted.
+
+- [ ] **JSON-escape text values in JSON bodies.** A value with a double quote or line break currently
+      produces invalid JSON (`"title": "{{title}}"` with `He said "hi"`). Escape strings when the
+      placeholder sits inside quotes in a JSON file; applies to request and response files.
+- [ ] **A project with no scenarios is an error.** Today `perfmon check` prints "0 passed" and exits 0.
+- [ ] **Accept `.yml` as well as `.yaml`** for scenario files and `meta`; today a `.yml` scenario is
+      silently ignored.
+- [ ] **Distinct stats names for repeated endpoints.** The same endpoint used twice in a scenario shares
+      one stats line (`coffee_break/find_coffee` blends three different requests). Add an optional
+      `name:` on a step and an automatic `#2`, `#3` suffix when none is given.
+- [ ] **Load-time placeholder check** (moved here from step 8): every `{{placeholder}}` in path, query,
+      headers, request and response files must be supplied by vars, a CSV header or an earlier
+      `extract`. Today a missing variable raises on every iteration of a load run and is not counted
+      as a failed request.
+- [ ] **Load-time check of JSONPath syntax** in `extract` (moved here from step 8).
+- [ ] Example: a step `name:` in `coffee_break`; a value with quotes in `coffee_lifecycle`.
+- [ ] Editor support: description for step `name`; regenerate the schemas.
+
+### 5b. Review cleanup: code quality
+
+Found in the same review. One small commit, no behaviour change.
+
+- [ ] **One list of endpoint fields.** Adding a key to `meta.yaml` means touching `schema.py`,
+      `models.py` and the field-by-field copy in `loader.py`. Let the resolved `Endpoint` wrap the parsed
+      `EndpointFile` instead of copying it.
+- [ ] **Move the JSON rendering next to the REST handler.** `render_json` and the omit logic are
+      JSON-specific and sit in the general `template.py`; SOAP will need an XML counterpart.
+- [ ] **Set up `ruff` and a type checker** (config in `pyproject.toml`, dev dependencies) and fix what
+      they report; a first `ruff` run showed 15 findings, mostly long lines.
+- [ ] **Share test helpers.** The `write` helper is defined in four test files; move it to `tests/conftest.py`.
+
+### 6. Project file, `perfmon run` and modes (load shapes)
+
+The first four items come from the code review and belong here because the modes need them.
+
+- [ ] **`project.yaml` in the project root** with `host` and shared `vars` (lowest precedence), so
+      `--host` need not be typed every time and common values are not repeated in every scenario.
+      It is also where the mode settings live.
+- [ ] **`perfmon run --mode baseline|limit [scenario ...]`** wrapping Locust, so load runs and checks are
+      started the same way (`--root`, `--host` overriding the project file). Replaces `PERFMON_ROOT`.
+- [ ] **Secrets from the environment:** a `{{$env.NAME}}` built-in, so tokens need not be committed in
+      YAML or CSV. A missing environment variable is an error.
+- [ ] **Per-user setup steps:** a `setup:` list in a scenario, run once per virtual user (e.g. `login`),
+      with its extracted values available to every iteration. Today a chain that starts with `login`
+      logs in on every iteration, which distorts baseline and limit numbers.
 
 - [ ] Create `perfmon/modes/` with one `LoadTestShape` per mode.
 - [ ] `baseline`: fixed low user count, constant pacing, fixed duration; report p50/p95/p99 per endpoint.
 - [ ] `limit`: stepped ramp; stop when error rate or p95 crosses a threshold; report the step where it broke.
-- [ ] Decide where mode settings live (users, duration, step size, thresholds), e.g. a `modes.yaml` in the project root.
+- [ ] Mode settings (users, duration, step size, thresholds) in `project.yaml`.
 - [ ] Add user pacing (`wait_time`); today users fire requests back to back.
-- [ ] Example: mode settings for `baseline` and `limit` in the example project, with the commands in its README.
-- [ ] Editor support: schema and IntelliJ mapping for the mode settings file.
+- [ ] Example: `project.yaml` with host and mode settings in both example projects, a `setup:` step and a
+      `{{$env.NAME}}` value, with the commands in the README.
+- [ ] Editor support: schema and IntelliJ mapping for `project.yaml`; description for `setup`.
 
 ### 7. Reporting
 
@@ -100,12 +150,11 @@ functional endpoint checks, driven by folders of YAML and request/response files
 
 ### 8. Ergonomics and docs
 
-- [ ] Load-time check that every `{{placeholder}}` is supplied by vars, a CSV header or an earlier
-      `extract` (today a missing variable only fails at run time).
-- [ ] Load-time check of JSONPath syntax in `extract` (today a bad expression fails the step at run time).
 - [ ] Check mode: option to run every data row instead of only the first.
 - [ ] List the allowed keys in "unknown key" errors (lost when moving to pydantic).
-- [ ] A single CLI wrapping Locust so `--root` and `--mode` replace the environment variable.
+- [ ] `validate.status` accepting several codes or a class (`[200, 204]`, `2xx`); today one code only.
+- [ ] Type check for CSV values used as bare JSON (`"qty": {{qty}}` with `abc` is sent as invalid JSON).
+- [ ] Warn about endpoint folders that no scenario uses.
 - [ ] README with the file formats.
 - [x] Example project against sampleapis.com in `Example/`.
 - [x] `.gitignore` for `__pycache__/`, `.venv/` and `.pytest_cache/`; `.idea/` is committed (it holds the schema mappings).
