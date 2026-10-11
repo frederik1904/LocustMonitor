@@ -26,6 +26,8 @@ functional endpoint checks, driven by folders of YAML and request/response files
   - add a mapping in `.idea/jsonSchemas.xml` for any new kind of YAML file (e.g. mode settings in step 6).
 - **Before committing, all four must pass:** `uv run pytest`, `uv run ruff check .`,
   `uv run ruff format --check .` and `uv run pyright`.
+- **Keep `README.md` up to date.** It is the user documentation: a change to a file format, a command,
+  an output or a limitation is not done until the README says so.
 
 ## Status
 
@@ -42,6 +44,7 @@ functional endpoint checks, driven by folders of YAML and request/response files
 | 7 | Reporter interface and Excel reporter | Done |
 | 8 | Ergonomics and docs | Todo |
 | 9 | Generate endpoint folders from OpenAPI | Todo |
+| 10 | Escape hatch: scenarios written in Python | Todo |
 
 ## Todo
 
@@ -181,7 +184,9 @@ Readers: developers looking for a bottleneck, and people checking a contract (we
 - [ ] `validate.status` accepting several codes or a class (`[200, 204]`, `2xx`); today one code only.
 - [ ] Type check for CSV values used as bare JSON (`"qty": {{qty}}` with `abc` is sent as invalid JSON).
 - [ ] Warn about endpoint folders that no scenario uses.
-- [ ] README with the file formats, the commands and the container usage.
+- [x] `README.md`: how to use the project, for developers and technical testers (concepts, file
+      formats, placeholders, running, reading the numbers, reports, targets, container, editor
+      support, troubleshooting, limitations, and how the code is organised and extended).
 - [x] Example project against sampleapis.com in `Example/`.
 - [x] `.gitignore` for `__pycache__/`, `.venv/` and `.pytest_cache/`; `.idea/` is committed (it holds the schema mappings).
 - [ ] Distributed runs: the shared CSV cursor is per process; unique rows across workers need partitioning.
@@ -204,6 +209,35 @@ Depends on `query:` (step 4) and body validation (step 5).
 - [ ] Example: a small OpenAPI file and the folders generated from it, in their own example folder.
 - Not generated: real values (which ids exist), chains between endpoints, obtaining auth tokens.
 - Out of scope for now: reporting drift when the spec changes; Swagger 2.0.
+
+### 10. Escape hatch: scenarios written in Python
+
+Files stay the default way to write a test. A scenario may instead be a Python class when it needs
+logic that YAML cannot express: conditional steps, polling until a job finishes, request signing,
+refreshing a token, or anything else that would otherwise mean adding a feature to the file format.
+
+Context: the tool is meant for three teams and 30 to 100 endpoints. Across that many, some flow will
+need real logic, and without a way to write that one scenario in code a team would have to leave the
+tool over a single case.
+
+- [ ] A scenario can be a Python file in the project (e.g. `scenarios/order_flow.py`) defining a class
+      with `setup` and `run` methods that receive the HTTP client and the iteration's values.
+- [ ] It is measured, judged against targets and reported exactly like a file scenario: same step
+      labels (`scenario/step`), same iteration statistic, same reports, same `check` output.
+- [ ] It can call endpoints defined as folders (render, send, validate, extract through the same
+      handler) as well as send requests of its own, so a Python scenario does not have to restate
+      what the files already describe.
+- [ ] `weight`, `data` and `setup` data work the same; the row for the iteration is passed in.
+- [ ] `perfmon check` runs it once like any other scenario; a failed assertion is a failed step.
+- [ ] Decide: how a step is declared so it gets a name, a target and a place in the reports
+      (a context manager or decorator around each request).
+- [ ] Decide: what load-time verification is still possible for a Python scenario (endpoint names it
+      refers to, data files); placeholders inside code cannot be checked before the run.
+- [ ] Security note for the README: a Python scenario runs arbitrary code, so review it like code.
+- [ ] Example: one Python scenario in an example project that needs logic, e.g. polling.
+- [ ] README: when to reach for it, and that files remain the first choice.
+- Not the goal: replacing the file format. If everyone writing tests turns out to be comfortable in
+  Python, revisit that; it would remove the template language, loader and schema export.
 
 ## Known gaps and possible later additions
 
@@ -326,6 +360,10 @@ Not planned as steps; listed so they are not forgotten.
   report's Settings sheet records it. *Why in the project file and not a command-line flag:* it is a
   property of the environment being tested, and it should be visible to whoever reads the project.
 - **A trailing slash on `host` is ignored**, since every path starts with one.
+- **Files first, Python as the escape hatch (planned, step 10).** *Why:* files let people who do not
+  write Python add tests, keep three teams writing them the same way, and can be generated and
+  verified before a run; code is needed for the minority of flows with real logic. Offering both stops
+  the file format from growing into a programming language one feature at a time.
 - **Exit codes of `perfmon run`:** baseline exits 1 if a target was missed, or if a request failed in a
   step that sets no failure target of its own; limit exits 0 whether or not
   it found the limit, because failures are what it is looking for. 2 is a configuration error.
