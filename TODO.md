@@ -143,6 +143,8 @@ Found in the same review. No behaviour change.
 ### 7. Reporting
 
 - [ ] Create `perfmon/reporting/` with `base.py` (`Reporter` interface) and `excel.py`.
+- [ ] Container: reports need a writable output folder (the project is mounted read-only); add a
+      `reports` volume to `compose.yaml`.
 - [ ] Interface has two hooks: `on_request` (streaming, must not block) and `on_test_end(stats)` (summary).
 - [ ] Excel reporter (`openpyxl`): one summary sheet with per-endpoint counts, failures and percentiles.
 - [ ] Later: LGTM reporter; decide between Prometheus remote-write, OTLP and Loki at that point.
@@ -155,7 +157,7 @@ Found in the same review. No behaviour change.
 - [ ] `validate.status` accepting several codes or a class (`[200, 204]`, `2xx`); today one code only.
 - [ ] Type check for CSV values used as bare JSON (`"qty": {{qty}}` with `abc` is sent as invalid JSON).
 - [ ] Warn about endpoint folders that no scenario uses.
-- [ ] README with the file formats.
+- [ ] README with the file formats, the commands and the container usage.
 - [x] Example project against sampleapis.com in `Example/`.
 - [x] `.gitignore` for `__pycache__/`, `.venv/` and `.pytest_cache/`; `.idea/` is committed (it holds the schema mappings).
 - [ ] Distributed runs: the shared CSV cursor is per process; unique rows across workers need partitioning.
@@ -291,6 +293,10 @@ Not planned as steps; listed so they are not forgotten.
   step fails, the steps after it are not sent, so they appear nowhere in the request statistics and
   the failure rate understates how many user journeys broke; but they did not fail either, so
   counting them as errors would be wrong too.
+- **The container image holds only perfmon; the project is mounted.** `perfmon` is the entrypoint, so
+  the arguments are the same as on the command line, and exit codes pass through for CI. *Why:* one
+  image serves every project, and editing a scenario needs no rebuild. It runs as a non-root user,
+  and `host.docker.internal` reaches an API on the machine running Docker.
 - **Exit codes of `perfmon run`:** baseline exits 1 if any request failed; limit exits 0 whether or not
   it found the limit, because failures are what it is looking for. 2 is a configuration error.
 - **Setup values rank below the iteration's own row:** step vars < setup row and extracts < iteration
@@ -390,4 +396,15 @@ uv run ruff check . && uv run ruff format --check . && uv run pyright
 uv run perfmon check --root Example
 uv run perfmon run --root Example                 # baseline
 uv run perfmon run --root Example --mode limit
+```
+
+In a container (the project folder is mounted read-only at `/project`; `PERFMON_PROJECT` picks it,
+default `./Example`; an optional `.env` file supplies `{{$env.NAME}}` values):
+
+```fish
+docker compose build
+docker compose run --rm perfmon check
+docker compose run --rm perfmon run --mode limit
+PERFMON_PROJECT=./ExampleFailing docker compose run --rm perfmon check
+docker run --rm -v "$PWD/Example:/project:ro" perfmon check        # without compose
 ```

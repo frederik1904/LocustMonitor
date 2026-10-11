@@ -1,0 +1,19 @@
+# Run perfmon in a container against a project folder on this machine.
+#
+#   docker compose run --rm perfmon check
+#   docker compose run --rm perfmon run --mode limit
+#   PERFMON_PROJECT=./ExampleFailing docker compose run --rm perfmon check
+services:
+  perfmon:
+    build: .
+    image: perfmon
+    volumes:
+      # The project to run; set PERFMON_PROJECT to use another folder.
+      - ${PERFMON_PROJECT:-./Example}:/project:ro
+    env_file:
+      # Values for {{$env.NAME}} placeholders, one NAME=value per line. The file is optional.
+      - path: .env
+        required: false
+    extra_hosts:
+      # Lets a project reach an API running on this machine as http://host.docker.internal:<port>.
+      - host.docker.internal:host-gateway

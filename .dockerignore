@@ -1,0 +1,6 @@
+# Only pyproject.toml, uv.lock and perfmon/ go into the image.
+*
+!pyproject.toml
+!uv.lock
+!perfmon
+**/__pycache__
