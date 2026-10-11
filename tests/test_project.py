@@ -60,3 +60,31 @@ def test_the_command_line_refuses_a_project_with_problems(project: Path, capsys:
     write(project, "scenarios/flow.yaml", "steps: [login]\n")
     assert main(["check", "--root", str(project), "--host", "http://127.0.0.1:9"]) == 2
     assert "provides {{user}}" in capsys.readouterr().err
+
+
+def test_setup_values_satisfy_the_steps_but_not_the_other_way_round(project: Path):
+    write(
+        project,
+        "scenarios/flow.yaml",
+        "setup: {data: data/users.csv, steps: [login]}\nvars: {status: open}\nsteps: [orders]\n",
+    )
+    open_project(project)
+
+    write(
+        project, "scenarios/flow.yaml", "setup: [login]\ndata: data/users.csv\nvars: {status: open}\nsteps: [orders]\n"
+    )
+    with pytest.raises(ConfigError, match="step 'setup/login': .* provides {{user}}"):
+        open_project(project)
+
+
+def test_environment_variables_must_be_set(project: Path, monkeypatch: pytest.MonkeyPatch):
+    write(
+        project,
+        "endpoints/login/meta.yaml",
+        "method: POST\npath: /login\nheaders: {X-Key: '{{$env.PERFMON_TEST_KEY}}'}\nextract: {token: $.token, me: $.user}\n",
+    )
+    monkeypatch.delenv("PERFMON_TEST_KEY", raising=False)
+    with pytest.raises(ConfigError, match="endpoint 'login': the environment variable PERFMON_TEST_KEY is not set"):
+        open_project(project)
+    monkeypatch.setenv("PERFMON_TEST_KEY", "s3cret")
+    open_project(project)

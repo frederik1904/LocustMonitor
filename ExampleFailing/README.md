@@ -4,7 +4,7 @@ Every scenario here fails on purpose, to show how each kind of failure is report
 It only sends GET requests to <https://sampleapis.com/>.
 
 ```fish
-uv run perfmon check --root ExampleFailing --host https://api.sampleapis.com
+uv run perfmon check --root ExampleFailing
 ```
 
 The command exits with code 1 and prints:

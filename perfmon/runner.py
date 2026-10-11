@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from perfmon.config.models import Endpoint, Scenario, Step
@@ -36,18 +37,50 @@ class HttpClient(Protocol):
     ) -> AbstractContextManager[CaughtResponse]: ...
 
 
-def run_scenario(scenario: Scenario, client: HttpClient, row: Mapping[str, Any] | None = None) -> tuple[str, ...]:
+@dataclass(frozen=True)
+class RunResult:
+    passed: bool
+    values: dict[str, Any]  # what the steps extracted
+    skipped: tuple[str, ...]  # steps not sent because an earlier one failed
+
+
+def run_setup(
+    scenario: Scenario, client: HttpClient, row: Mapping[str, Any] | None = None, *, check_bodies: bool = True
+) -> RunResult:
+    """Run the scenario's setup steps once, for one virtual user.
+
+    `row` is that user's setup data row. The result's values (the row plus what the steps
+    extracted) are what the user brings to each of its iterations.
+    """
+    result = _run_steps(scenario, scenario.setup, client, dict(row or {}), check_bodies)
+    return RunResult(result.passed, dict(row or {}) | result.values, result.skipped)
+
+
+def run_scenario(
+    scenario: Scenario,
+    client: HttpClient,
+    row: Mapping[str, Any] | None = None,
+    user_values: Mapping[str, Any] | None = None,
+    *,
+    check_bodies: bool = True,
+) -> RunResult:
     """Send the steps of the scenario once, in order, stopping at the first one that fails.
 
-    `row` is this iteration's data row, shared by every step. Returns the names of the
-    steps that were skipped because an earlier step failed.
+    `row` is this iteration's data row, shared by every step; `user_values` is what the
+    virtual user's setup produced. With check_bodies=False responses are judged on status alone.
     """
+    return _run_steps(scenario, scenario.steps, client, dict(user_values or {}) | dict(row or {}), check_bodies)
+
+
+def _run_steps(
+    scenario: Scenario, steps: tuple[Step, ...], client: HttpClient, given: dict[str, Any], check_bodies: bool
+) -> RunResult:
     extracted: dict[str, Any] = {}
-    for index, step in enumerate(scenario.steps):
+    for index, step in enumerate(steps):
         endpoint = step.endpoint
         handler = HANDLERS[endpoint.meta.protocol]
-        # Later sources win: the step's vars, then the data row, then values from earlier responses.
-        context = step.vars | dict(row or {}) | extracted
+        # Later sources win: the step's vars, then setup values and the data row, then earlier responses.
+        context = step.vars | given | extracted
         try:
             request = handler.prepare(endpoint, context)
         except TemplateError as error:
@@ -61,10 +94,10 @@ def run_scenario(scenario: Scenario, client: HttpClient, row: Mapping[str, Any] 
             data=request.body,
             catch_response=True,
         ) as response:
-            passed = _settle(handler, endpoint, response, context, extracted)
+            passed = _settle(handler, endpoint, response, context, extracted, check_bodies)
         if not passed:
-            return tuple(later.name for later in scenario.steps[index + 1 :])
-    return ()
+            return RunResult(False, extracted, tuple(later.name for later in steps[index + 1 :]))
+    return RunResult(True, extracted, ())
 
 
 def _settle(
@@ -73,6 +106,7 @@ def _settle(
     response: CaughtResponse,
     context: Mapping[str, Any],
     extracted: dict[str, Any],
+    check_bodies: bool,
 ) -> bool:
     """Mark the response passed or failed and collect its extracted values; True if it passed."""
     if response.status_code == 0:
@@ -83,7 +117,7 @@ def _settle(
         failure = None
     else:
         try:
-            failure = handler.check(endpoint, response, context)
+            failure = handler.check(endpoint, response, context, check_body=check_bodies)
         except TemplateError as error:
             failure = f"response file of '{endpoint.name}': {error}"
     if failure is None and endpoint.meta.extract:

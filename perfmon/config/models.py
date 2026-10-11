@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from perfmon.config.schema import DataMode, EndpointFile
+from perfmon.config.schema import DataMode, EndpointFile, ProjectFile
 
 
 class ConfigError(Exception):
@@ -40,9 +40,12 @@ class Scenario:
     steps: tuple[Step, ...]
     data: DataBinding | None = None
     weight: int = 1
+    setup: tuple[Step, ...] = ()  # run once per virtual user, before its first iteration
+    setup_data: DataBinding | None = None
 
 
 @dataclass(frozen=True)
 class Project:
     endpoints: dict[str, Endpoint]
     scenarios: dict[str, Scenario]
+    settings: ProjectFile = field(default_factory=ProjectFile)  # project.yaml

@@ -4,22 +4,29 @@ import json
 from pathlib import Path
 from typing import Any
 
-from perfmon.config.schema import EndpointFile, ScenarioFile
+from perfmon.config.schema import EndpointFile, ProjectFile, ScenarioFile
 
 ENDPOINT_SCHEMA = "endpoint.schema.json"
 SCENARIO_SCHEMA = "scenario.schema.json"
+PROJECT_SCHEMA = "project.schema.json"
+
+_ENDPOINT_NAME = {"type": "string", "description": "Name of a folder under endpoints/."}
+_CSV_PATH = {"type": "string", "description": "Path to a CSV file."}
 
 
 def json_schemas() -> dict[str, dict[str, Any]]:
-    endpoint = EndpointFile.model_json_schema()
     scenario = ScenarioFile.model_json_schema()
-    # The models only see the long forms; the shorthands accepted by the loader are added here.
-    steps = scenario["properties"]["steps"]
-    steps["items"] = {
-        "anyOf": [{"type": "string", "description": "Name of a folder under endpoints/."}, steps["items"]]
+    # The models only describe the long forms; the shorthands the loader also accepts are added here.
+    setup = scenario["$defs"]["SetupFile"]["properties"]
+    for owner in (scenario["properties"], setup):
+        owner["steps"]["items"] = {"anyOf": [_ENDPOINT_NAME, owner["steps"]["items"]]}
+        owner["data"]["anyOf"].insert(0, _CSV_PATH)
+    scenario["properties"]["setup"]["anyOf"].insert(0, {"type": "array", "items": setup["steps"]["items"]})
+    return {
+        ENDPOINT_SCHEMA: EndpointFile.model_json_schema(),
+        SCENARIO_SCHEMA: scenario,
+        PROJECT_SCHEMA: ProjectFile.model_json_schema(),
     }
-    scenario["properties"]["data"]["anyOf"].insert(0, {"type": "string", "description": "Path to a CSV file."})
-    return {ENDPOINT_SCHEMA: endpoint, SCENARIO_SCHEMA: scenario}
 
 
 def write_json_schemas(folder: Path) -> list[Path]:

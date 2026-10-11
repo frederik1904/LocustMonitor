@@ -8,7 +8,7 @@ from locust.event import EventHook
 
 from perfmon.config.models import Project
 from perfmon.data.pool import DataPool
-from perfmon.runner import run_scenario
+from perfmon.runner import run_scenario, run_setup
 from perfmon.template import TemplateError
 
 
@@ -51,11 +51,16 @@ def check_project(project: Project, host: str, only: list[str] | None = None) ->
         client = HttpSession(host, request_event, user=None)
         scenario = project.scenarios[name]
         try:
-            skipped = run_scenario(scenario, client, pool.next_row(scenario))
+            setup = run_setup(scenario, client, pool.next_setup_row(scenario))
+            skipped = list(setup.skipped)
+            if setup.passed:
+                skipped += run_scenario(scenario, client, pool.next_row(scenario), setup.values).skipped
+            else:
+                skipped += [step.name for step in scenario.steps]
         except TemplateError as error:
             outcomes.append(StepOutcome(name, "(request not sent)", None, None, str(error)))
             continue
-        outcomes.extend(StepOutcome(name, endpoint, None, None, None, skipped=True) for endpoint in skipped)
+        outcomes.extend(StepOutcome(name, step, None, None, None, skipped=True) for step in skipped)
     return outcomes
 
 

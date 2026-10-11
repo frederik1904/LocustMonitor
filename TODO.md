@@ -16,7 +16,8 @@ functional endpoint checks, driven by folders of YAML and request/response files
 - **Every feature ships with an example.** A step is not done until an example project uses the
   feature and it has been run (`perfmon check`, and a load run where relevant).
 - **Several example folders are fine.** `Example/` targets sampleapis.com and must always pass;
-  `ExampleFailing/` fails on purpose to show the reports; add another folder when a
+  `ExampleFailing/` fails on purpose to show the reports; `ExampleSecrets/` needs an environment
+  variable; add another folder when a
   feature needs a different kind of package (e.g. a SOAP or GraphQL API, or a local mock server for
   writes and failure cases). Each example folder has its own README.
 - **Keep the editor support up to date.** Whenever the file formats change:
@@ -31,13 +32,13 @@ functional endpoint checks, driven by folders of YAML and request/response files
 | # | Step | Status |
 |---|------|--------|
 | 1 | Models, loader, template renderer | Done |
-| 2 | REST handler, runner, user factory, locustfile | Done |
+| 2 | REST handler, runner, user factory | Done |
 | 3 | `check` mode (functional endpoint testing) | Done |
 | 4 | Chaining (`extract`) and CSV data source | Done |
 | 5 | Response validation (`subset` / `exact`) | Done |
 | 5a | Review fixes: correctness of results | Done |
 | 5b | Review cleanup: code quality | Done |
-| 6 | Project file, `perfmon run`, `baseline` and `limit` modes | Todo |
+| 6 | Project file, `perfmon run`, `baseline` and `limit` modes | Done |
 | 7 | Reporter interface and Excel reporter | Todo |
 | 8 | Ergonomics and docs | Todo |
 | 9 | Generate endpoint folders from OpenAPI | Todo |
@@ -112,29 +113,32 @@ Found in the same review. No behaviour change.
       pass. Long lines are allowed in tests, which hold YAML and JSON snippets as one-line strings.
 - [x] **Shared test helper:** `write` lives in `tests/helpers.py`.
 
-### 6. Project file, `perfmon run` and modes (load shapes)
+### 6. Project file, `perfmon run` and modes (done)
 
-The first four items come from the code review and belong here because the modes need them.
-
-- [ ] **`project.yaml` in the project root** with `host` and shared `vars` (lowest precedence), so
-      `--host` need not be typed every time and common values are not repeated in every scenario.
-      It is also where the mode settings live.
-- [ ] **`perfmon run --mode baseline|limit [scenario ...]`** wrapping Locust, so load runs and checks are
-      started the same way (`--root`, `--host` overriding the project file). Replaces `PERFMON_ROOT`.
-- [ ] **Secrets from the environment:** a `{{$env.NAME}}` built-in, so tokens need not be committed in
-      YAML or CSV. A missing environment variable is an error.
-- [ ] **Per-user setup steps:** a `setup:` list in a scenario, run once per virtual user (e.g. `login`),
-      with its extracted values available to every iteration. Today a chain that starts with `login`
-      logs in on every iteration, which distorts baseline and limit numbers.
-
-- [ ] Create `perfmon/modes/` with one `LoadTestShape` per mode.
-- [ ] `baseline`: fixed low user count, constant pacing, fixed duration; report p50/p95/p99 per endpoint.
-- [ ] `limit`: stepped ramp; stop when error rate or p95 crosses a threshold; report the step where it broke.
-- [ ] Mode settings (users, duration, step size, thresholds) in `project.yaml`.
-- [ ] Add user pacing (`wait_time`); today users fire requests back to back.
-- [ ] Example: `project.yaml` with host and mode settings in both example projects, a `setup:` step and a
-      `{{$env.NAME}}` value, with the commands in the README.
-- [ ] Editor support: schema and IntelliJ mapping for `project.yaml`; description for `setup`.
+- [x] **`project.yaml`** (optional) with `host`, shared `vars` (lowest precedence) and `modes`.
+- [x] **`perfmon run --mode baseline|limit [scenario ...]`**, with `--root` and `--host` (overrides the
+      project file). `perfmon check` takes the host from the project file too.
+- [x] **Secrets from the environment:** `{{$env.NAME}}`; an unset variable is reported before anything runs.
+- [x] **Per-user setup:** `setup:` in a scenario (a list of steps, or `{data, steps}`), run once per
+      virtual user. Its data row and extracted values are available in every iteration. A user whose
+      setup fails stops.
+- [x] `baseline`: a fixed number of users per scenario, constant pacing, fixed duration; a table with
+      requests, failures, p50/p95/p99, average and requests per second for every step.
+- [x] `limit`: users raised in steps across all scenarios (shared by weight); stops when a step's error
+      rate or p95 crosses `stop_when`; reports the step where it broke and the last healthy one.
+      Only status codes are checked, not bodies.
+- [x] `locustfile.py` and `PERFMON_ROOT` removed; `perfmon run` is the only way to start a load run.
+- [x] Pacing: seconds between the starts of a user's iterations, per mode.
+- [x] Durations accept seconds or `30s` / `5m` / `1h`.
+- [x] A run stops gracefully: users finish the iteration they are in, so clean-up steps still run.
+- [x] Example: `project.yaml` in all example projects; `setup:` in `Example/scenarios/tasting.yaml`;
+      `{{$env.NAME}}` in `ExampleSecrets/`.
+- [x] Editor support: `schemas/project.schema.json` with its IntelliJ mapping; descriptions for `setup`.
+- [x] **Iteration statistic:** per scenario, the iterations run, how many were incomplete (a step
+      failed) and how many steps were therefore never sent; limit mode also prints it per step. Kept
+      apart from the request failure rate, because a step that was not sent did not itself fail.
+- [ ] Later, if needed: command-line overrides for mode settings (`--users`, `--duration`); a warm-up
+      period excluded from a limit step; baseline thresholds that fail the run (a regression gate).
 
 ### 7. Reporting
 
@@ -174,6 +178,23 @@ Depends on `query:` (step 4) and body validation (step 5).
 - [ ] Example: a small OpenAPI file and the folders generated from it, in their own example folder.
 - Not generated: real values (which ids exist), chains between endpoints, obtaining auth tokens.
 - Out of scope for now: reporting drift when the spec changes; Swagger 2.0.
+
+## Known gaps and possible later additions
+
+Not planned as steps; listed so they are not forgotten.
+
+- **Re-login when a token expires.** `setup:` runs once per virtual user and is never repeated, so a
+  token that expires during a long run turns that user's requests into 401s. Options: run setup again
+  when a step answers 401, or after a configured time. Unlikely to matter for short runs.
+- **Incomplete iterations do not stop a limit run.** They are reported but are not part of
+  `stop_when`; a threshold such as `incomplete_percent` could be added.
+- **Chains and limit tests:** a slow step throttles the steps after it, and a failed step hides the
+  rest. To find one endpoint's limit, give it its own scenario and put its prerequisites in `setup:`.
+- **One process, one CPU core.** Locust runs all virtual users on one core. More load needs
+  distributed workers (which also need row partitioning for CSV data) or Locust's faster HTTP client.
+- **Extracting from a large response is the one costly step** (about 0.26 ms of CPU for a 58 KB list),
+  because the whole body is parsed. Everything else we add per step is a few microseconds.
+- **Check mode uses only the first data row** of each scenario.
 
 ## Decisions and why
 
@@ -235,7 +256,7 @@ Depends on `query:` (step 4) and body validation (step 5).
 ### Architecture
 
 - **Dependencies point one way and Locust stays at the edge.** `config`, `template`, `protocols` and
-  `runner` do not import Locust; only `users.py`, `locustfile.py` and (later) modes/reporting do.
+  `runner` do not import Locust; only `users.py` and `modes/` (and later reporting) do.
   *Why:* the core is unit-testable and reusable for `check` mode.
 - **One strategy, one folder:** `base.py` holds the interface, one file per implementation, a registry in
   `__init__.py`. *Why:* adding SOAP is one file and one enum value.
@@ -246,12 +267,34 @@ Depends on `query:` (step 4) and body validation (step 5).
 
 ### Running
 
-- **One Locust user class per scenario**, named after it and weighted by `weight`. *Why:* `locust flow ping`
-  selects scenarios, and Locust's own weighting handles the mix.
+- **One Locust user class per scenario**, weighted by `weight`. *Why:* Locust's own weighting handles
+  the mix of scenarios in a limit run.
 - **Stats names are `scenario/step`.** A step is named after its endpoint unless it has a `name:`; repeats
   are numbered. *Why:* the same endpoint in two scenarios, or twice in one, is measured separately.
-- **`PERFMON_ROOT` is an environment variable.** *Why:* Locust imports the locustfile
-  before parsing its own arguments, and user classes must exist at import.
+- **`perfmon run` drives Locust as a library**, not through `locustfile.py`. *Why:* the mode controls
+  the user count step by step, reads each step's results and decides the exit code, none of which the
+  Locust command line exposes. `locustfile.py` and `PERFMON_ROOT` were removed: the Locust web UI is
+  not used, and one way to start a run is cleaner than two.
+- **Modes are a strategy** (`LoadMode` in `perfmon/modes/load.py`): pacing, whether users are pinned
+  per scenario, and a `drive` method that changes the load over time. They are plain loops over
+  "set users, wait, look at the window" instead of Locust `LoadTestShape` classes. *Why:* a shape can
+  only return a user count per tick; it cannot look at results or explain why it stopped.
+- **Baseline users are per scenario; limit users are shared by weight.** *Why:* a baseline should measure
+  every scenario the same way however many scenarios exist, while a limit test should apply a realistic mix.
+- **A limit step is judged on its own requests only**, collected through a request listener. *Why:*
+  Locust's statistics are cumulative, which would hide a late degradation behind early healthy steps.
+- **Limit mode checks status codes only**, not response bodies (`validate.body` is ignored there;
+  `extract` still runs because later steps need its values). *Why:* a limit test asks whether the API
+  still answers, and comparing bodies costs load-generator CPU exactly when it is needed for load.
+  Baseline and check mode compare bodies as configured.
+- **Incomplete iterations are a statistic of their own**, separate from request failures. *Why:* when a
+  step fails, the steps after it are not sent, so they appear nowhere in the request statistics and
+  the failure rate understates how many user journeys broke; but they did not fail either, so
+  counting them as errors would be wrong too.
+- **Exit codes of `perfmon run`:** baseline exits 1 if any request failed; limit exits 0 whether or not
+  it found the limit, because failures are what it is looking for. 2 is a configuration error.
+- **Setup values rank below the iteration's own row:** step vars < setup row and extracts < iteration
+  row < iteration extracts. *Why:* the more recent and more specific value wins.
 - **Content-Type is guessed from the request file extension** unless `meta.yaml` sets it.
 - **Bodies are sent as UTF-8 bytes.** *Why:* `requests` would otherwise encode a `str` body as latin-1.
 - **Check mode uses Locust's own HTTP session**, listening to its request event. *Why:* a check sends
@@ -298,12 +341,27 @@ Depends on `query:` (step 4) and body validation (step 5).
 ## File format reference
 
 ```yaml
+# project.yaml (optional)
+host: https://api.example.com
+vars: { tenant: acme }                 # lowest precedence
+modes:
+  baseline: { users: 1, duration: 60s, pacing: 1 }
+  limit:
+    start_users: 5
+    step_users: 5
+    max_users: 100
+    step_duration: 30s
+    pacing: 1
+    stop_when: { error_percent: 5, p95_ms: 1000 }
+```
+
+```yaml
 # endpoints/create_order/meta.yaml
 path: /customers/{{customer}}/orders   # required
 method: POST                           # default GET
 protocol: rest                         # default rest
-headers: { Authorization: "Bearer {{token}}" }
 query: { expand: "{{expand}}" }          # a null value is not sent
+headers: { Authorization: "Bearer {{token}}", X-Api-Key: "{{$env.API_KEY}}" }
 extract: { order_id: $.id }            # JSONPath into the response, for later steps
 validate: { status: 201, body: subset } # body: none | subset | exact, compared with response.*
 vars: { quantity: 1 }
@@ -312,12 +370,16 @@ vars: { quantity: 1 }
 ```yaml
 # scenarios/order_flow.yaml
 weight: 3
-data: data/users.csv                   # or { file: ..., mode: shared | scenario | random, seed: 1 }
+setup:                                 # once per virtual user; or a plain list of steps
+  data: data/users.csv
+  steps: [login]
+data: data/orders.csv                  # or { file: ..., mode: shared | scenario | random, seed: 1 }
 vars: { currency: DKK }
 steps:
-  - login
   - endpoint: create_order
-    vars: { quantity: 2 }
+    name: big_order                    # label in reports; default is the endpoint name
+    vars: { quantity: 500 }
+  - get_order
 ```
 
 ## Running
@@ -325,6 +387,7 @@ steps:
 ```fish
 uv run pytest
 uv run ruff check . && uv run ruff format --check . && uv run pyright
-uv run perfmon check --root Example --host https://api.sampleapis.com
-PERFMON_ROOT=path/to/project uv run locust --headless -u 10 -t 30s --host http://your-api
+uv run perfmon check --root Example
+uv run perfmon run --root Example                 # baseline
+uv run perfmon run --root Example --mode limit
 ```

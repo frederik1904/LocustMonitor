@@ -45,13 +45,15 @@ class RestHandler:
             body=body,
         )
 
-    def check(self, endpoint: Endpoint, response: HttpResponse, context: Mapping[str, Any]) -> str | None:
+    def check(
+        self, endpoint: Endpoint, response: HttpResponse, context: Mapping[str, Any], *, check_body: bool
+    ) -> str | None:
         validation = endpoint.meta.validation
         if validation is None:
             return None
         if validation.status is not None and response.status_code != validation.status:
             return f"expected status {validation.status}, got {response.status_code}"
-        if validation.body is BodyMatch.NONE or endpoint.response is None:
+        if not check_body or validation.body is BodyMatch.NONE or endpoint.response is None:
             return None
         try:
             # A null variable leaves its key out of the expectation, as it does in a request.

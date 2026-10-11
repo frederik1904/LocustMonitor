@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import time
 import uuid
@@ -14,6 +15,9 @@ BUILTINS = {
     "$timestamp": lambda: int(time.time()),
     "$isotime": lambda: datetime.now(UTC).isoformat(),
 }
+
+
+_ENV = "$env."  # {{$env.NAME}} reads the environment variable NAME
 
 
 class TemplateError(Exception):
@@ -36,7 +40,14 @@ def _lookup(name: str, context: Mapping[str, Any]) -> Any:
 
 def placeholders(template: str) -> set[str]:
     """The names a template needs values for (built-ins excluded)."""
-    return {match.group(1) for match in PLACEHOLDER.finditer(template)} - BUILTINS.keys()
+    names = {match.group(1) for match in PLACEHOLDER.finditer(template)} - BUILTINS.keys()
+    return {name for name in names if not name.startswith(_ENV)}
+
+
+def environment_variables(template: str) -> set[str]:
+    """The environment variables a template reads through {{$env.NAME}}."""
+    names = {match.group(1) for match in PLACEHOLDER.finditer(template)}
+    return {name.removeprefix(_ENV) for name in names if name.startswith(_ENV)}
 
 
 def substitute(
@@ -51,7 +62,12 @@ def substitute(
 
     def replace(match: re.Match[str]) -> str:
         name = match.group(1)
-        value = BUILTINS[name]() if name in BUILTINS else _lookup(name, context)
+        if name in BUILTINS:
+            value = BUILTINS[name]()
+        elif name.startswith(_ENV):
+            value = os.environ.get(name.removeprefix(_ENV), _MISSING)
+        else:
+            value = _lookup(name, context)
         if value is _MISSING:
             missing.append(name)
             return match.group(0)

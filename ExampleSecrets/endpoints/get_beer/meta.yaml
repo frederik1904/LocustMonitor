@@ -1,0 +1,6 @@
+# The key is read from the environment when the request is built, so it is never written in a file.
+path: /beers/ale/1
+headers:
+  X-Api-Key: "{{$env.SAMPLE_API_KEY}}"
+validate:
+  status: 200

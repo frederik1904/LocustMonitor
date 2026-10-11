@@ -47,6 +47,28 @@
             </SchemaInfo>
           </value>
         </entry>
+        <entry key="perfmon project">
+          <value>
+            <SchemaInfo>
+              <option name="name" value="perfmon project" />
+              <option name="relativePathToSchema" value="schemas/project.schema.json" />
+              <option name="patterns">
+                <list>
+                  <Item>
+                    <option name="pattern" value="true" />
+                    <option name="path" value="*/project.yaml" />
+                    <option name="mappingKind" value="Pattern" />
+                  </Item>
+                  <Item>
+                    <option name="pattern" value="true" />
+                    <option name="path" value="*/project.yml" />
+                    <option name="mappingKind" value="Pattern" />
+                  </Item>
+                </list>
+              </option>
+            </SchemaInfo>
+          </value>
+        </entry>
       </map>
     </state>
   </component>

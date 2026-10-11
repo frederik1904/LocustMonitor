@@ -40,7 +40,7 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 known-first-party = ["perfmon", "helpers"]
 
 [tool.pyright]
-include = ["perfmon", "locustfile.py"]
+include = ["perfmon"]
 venvPath = "."
 venv = ".venv"
 

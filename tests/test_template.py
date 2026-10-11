@@ -1,6 +1,13 @@
 import pytest
 
-from perfmon.template import TemplateError, placeholders, render, render_mapping, render_optional
+from perfmon.template import (
+    TemplateError,
+    environment_variables,
+    placeholders,
+    render,
+    render_mapping,
+    render_optional,
+)
 
 
 def test_substitutes_names_and_dotted_paths():
@@ -43,3 +50,13 @@ def test_render_mapping_drops_null_entries_and_writes_literals_as_text():
 
 def test_placeholders_lists_the_names_a_template_needs():
     assert placeholders("/{{a}}/{{ b.c }}?x={{a}}&t={{$uuid}}") == {"a", "b.c"}
+
+
+def test_env_placeholders_read_the_environment(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PERFMON_TEST_KEY", "s3cret")
+    monkeypatch.delenv("PERFMON_TEST_OTHER", raising=False)
+    assert render("Bearer {{$env.PERFMON_TEST_KEY}}", {}) == "Bearer s3cret"
+    with pytest.raises(TemplateError, match=r"no value for: \$env.PERFMON_TEST_OTHER"):
+        render("{{$env.PERFMON_TEST_OTHER}}", {})
+    template = "{{a}} {{$env.PERFMON_TEST_KEY}} {{$uuid}}"
+    assert placeholders(template) == {"a"} and environment_variables(template) == {"PERFMON_TEST_KEY"}

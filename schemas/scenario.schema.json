@@ -43,6 +43,49 @@
       "title": "DataSpec",
       "type": "object"
     },
+    "SetupFile": {
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "description": "Endpoints to call once per virtual user. Each is an endpoint name, or a mapping to give the step a name or override vars.",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "Name of a folder under endpoints/."
+              },
+              {
+                "$ref": "#/$defs/StepFile"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Steps",
+          "type": "array"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "type": "string",
+              "description": "Path to a CSV file."
+            },
+            {
+              "$ref": "#/$defs/DataSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "One row per virtual user, for example its login: a CSV path, or a mapping with file and mode."
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "title": "SetupFile",
+      "type": "object"
+    },
     "StepFile": {
       "additionalProperties": false,
       "properties": {
@@ -83,8 +126,34 @@
   "additionalProperties": false,
   "description": "A scenario file: endpoints run in order as one test.",
   "properties": {
+    "setup": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "Name of a folder under endpoints/."
+              },
+              {
+                "$ref": "#/$defs/StepFile"
+              }
+            ]
+          }
+        },
+        {
+          "$ref": "#/$defs/SetupFile"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Steps run once per virtual user before its first iteration, such as a login. Their data row and extracted values are available in every iteration. A list of steps, or a mapping with steps and data."
+    },
     "steps": {
-      "description": "Endpoints to call, in order. Each is an endpoint name, or a mapping to override vars.",
+      "description": "Endpoints to call, in order, on every iteration. Each is an endpoint name, or a mapping to give the step a name or override vars.",
       "items": {
         "anyOf": [
           {

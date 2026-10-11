@@ -6,7 +6,7 @@ from locust import HttpUser
 
 from helpers import write
 from perfmon.config.loader import load_project
-from perfmon.runner import run_scenario
+from perfmon.runner import run_scenario, run_setup
 from perfmon.template import TemplateError
 from perfmon.users import build_user_classes
 
@@ -149,6 +149,20 @@ def test_body_validation(project: Path, mode: str, expected: str, variables: str
     assert len(client.verdicts) == 1 and client.verdicts[0].startswith(verdict)
 
 
+def test_bodies_can_be_left_unchecked_while_the_status_still_counts(project: Path):
+    write(project, "endpoints/ping/meta.yaml", "path: /ping\nvalidate: {status: 200, body: exact}\n")
+    write(project, "endpoints/ping/response.json", '{"id": 1}')
+    scenario = load_project(project).scenarios["ping"]
+
+    wrong_body = RecordingClient(bodies={"/ping": {"id": 2}})
+    run_scenario(scenario, wrong_body, check_bodies=False)
+    assert wrong_body.verdicts == ["success"]
+
+    wrong_status = RecordingClient(status_code=500)
+    run_scenario(scenario, wrong_status, check_bodies=False)
+    assert wrong_status.verdicts == ["expected status 200, got 500"]
+
+
 def test_status_is_checked_before_the_body(project: Path):
     write(project, "endpoints/ping/meta.yaml", "path: /ping\nvalidate: {status: 201, body: exact}\n")
     write(project, "endpoints/ping/response.json", "{}")
@@ -179,7 +193,7 @@ def test_values_flow_from_row_and_earlier_responses(chain: Path):
     client = RecordingClient(bodies={"/login": {"auth": {"token": "t0k"}, "ids": [42, 43]}})
     skipped = run_scenario(load_project(chain).scenarios["flow"], client, {"user": "from-row", "status": None})
     login, orders = client.calls
-    assert skipped == () and client.verdicts == ["success", "success"]
+    assert skipped.skipped == () and skipped.passed and client.verdicts == ["success", "success"]
     assert json.loads(login["data"]) == {"user": "from-row"}  # the row beats vars; null otp is left out
     assert orders["url"] == "/users/42/orders"  # extracted uid beats the endpoint's own var
     assert orders["headers"] == {"Authorization": "Bearer t0k"}  # null X-Trace is not sent
@@ -197,8 +211,31 @@ def test_values_flow_from_row_and_earlier_responses(chain: Path):
 def test_a_failed_step_stops_the_chain(chain: Path, status: int, body, verdict):
     client = RecordingClient(status_code=status, bodies={"/login": body})
     skipped = run_scenario(load_project(chain).scenarios["flow"], client, {})
-    assert skipped == ("orders",) and len(client.calls) == 1
+    assert skipped.skipped == ("orders",) and not skipped.passed and len(client.calls) == 1
     assert client.verdicts == ([verdict] if verdict else [])
+
+
+def test_setup_values_are_there_for_every_iteration(chain: Path):
+    write(chain, "scenarios/flow.yaml", "vars: {user: from-vars, otp: null}\nsetup: [login]\nsteps: [orders]\n")
+    scenario = load_project(chain).scenarios["flow"]
+    client = RecordingClient(bodies={"/login": {"auth": {"token": "t0k"}, "ids": [42]}})
+
+    setup = run_setup(scenario, client, {"user": "ada", "status": "new"})
+    assert setup.passed and setup.values == {"user": "ada", "status": "new", "token": "t0k", "uid": 42}
+    assert client.calls[0]["name"] == "flow/setup/login"
+
+    for row in ({}, {"status": "paid"}):  # an iteration's own row beats the setup's
+        run_scenario(scenario, client, row, setup.values)
+    first, second = client.calls[1:]
+    assert first["url"] == second["url"] == "/users/42/orders"
+    assert (first["params"]["status"], second["params"]["status"]) == ("new", "paid")
+    assert len(client.calls) == 3  # login was sent once
+
+
+def test_a_failed_setup_reports_what_it_skipped(chain: Path):
+    write(chain, "scenarios/flow.yaml", "vars: {user: u, otp: null}\nsetup: [login, login]\nsteps: [orders]\n")
+    setup = run_setup(load_project(chain).scenarios["flow"], RecordingClient(status_code=500))
+    assert not setup.passed and setup.skipped == ("setup/login#2",)
 
 
 def test_invalid_jsonpath_is_a_failure(chain: Path):

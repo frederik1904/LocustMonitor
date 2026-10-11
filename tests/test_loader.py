@@ -5,7 +5,7 @@ import pytest
 from helpers import write
 from perfmon.config.loader import load_project
 from perfmon.config.models import ConfigError, DataBinding
-from perfmon.config.schema import ApiProtocol, BodyMatch, DataMode, HttpMethod, ValidationSpec
+from perfmon.config.schema import ApiProtocol, BodyMatch, DataMode, HttpMethod, ProjectFile, ValidationSpec
 
 
 @pytest.fixture
@@ -165,3 +165,38 @@ def test_a_project_without_scenarios_is_an_error(tmp_path: Path):
     write(tmp_path, "scenarios/notes.txt", "not a scenario")
     with pytest.raises(ConfigError, match="no scenario files"):
         load_project(tmp_path)
+
+
+def test_project_file_gives_host_modes_and_the_lowest_precedence_vars(project: Path):
+    write(
+        project,
+        "project.yaml",
+        "host: https://api.example.com\nvars: {tenant: acme, quantity: 99}\n"
+        "modes:\n  baseline: {users: 2, duration: 5m, pacing: 0}\n  limit: {step_duration: 10s, stop_when: {p95_ms: 800}}\n",
+    )
+    loaded = load_project(project)
+    assert loaded.settings.host == "https://api.example.com"
+    assert (loaded.settings.modes.baseline.duration, loaded.settings.modes.baseline.users) == (300, 2)
+    assert (loaded.settings.modes.limit.step_duration, loaded.settings.modes.limit.stop_when.p95_ms) == (10, 800)
+    # project < endpoint < scenario < step
+    assert loaded.scenarios["order_flow"].steps[1].vars == {"tenant": "acme", "quantity": 2, "currency": "DKK"}
+
+
+def test_project_file_is_optional_and_checked(project: Path):
+    assert load_project(project).settings == ProjectFile()
+    write(project, "project.yaml", "modes: {baseline: {duration: soon}}\n")
+    with pytest.raises(ConfigError, match="project.yaml: modes.baseline.duration: .*such as 30s, 5m or 1h"):
+        load_project(project)
+
+
+def test_setup_as_a_list_or_with_its_own_data(project: Path):
+    write(project, "scenarios/order_flow.yaml", "setup: [login, login]\nsteps: [login, create_order]\n")
+    flow = load_project(project).scenarios["order_flow"]
+    assert [step.name for step in flow.setup] == ["setup/login", "setup/login#2"]
+    assert [step.name for step in flow.steps] == ["login", "create_order"] and flow.setup_data is None
+
+    write(
+        project, "scenarios/order_flow.yaml", "setup: {data: data/users.csv, steps: [login]}\nsteps: [create_order]\n"
+    )
+    flow = load_project(project).scenarios["order_flow"]
+    assert flow.setup_data == DataBinding(project / "data/users.csv", DataMode.SHARED, None) and flow.data is None

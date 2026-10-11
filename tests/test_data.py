@@ -74,3 +74,16 @@ def test_unsupported_data_file_type(project: Path):
     write(project, "scenarios/own.yaml", "steps: [get]\ndata: data/ids.json\n")
     with pytest.raises(ConfigError, match="unsupported data file type"):
         DataPool(load_project(project))
+
+
+def test_setup_rows_come_from_the_setup_data(project: Path):
+    write(project, "data/users.csv", "id\nu1\nu2\n")
+    write(
+        project, "scenarios/own.yaml", "setup: {data: data/users.csv, steps: [get]}\nsteps: [get]\ndata: data/ids.csv\n"
+    )
+    loaded = load_project(project)
+    pool = DataPool(loaded)
+    own = loaded.scenarios["own"]
+    assert [pool.next_setup_row(own)["id"], pool.next_setup_row(own)["id"]] == ["u1", "u2"]
+    assert pool.next_row(own)["id"] == "1"
+    assert pool.next_setup_row(loaded.scenarios["no_data"]) == {}

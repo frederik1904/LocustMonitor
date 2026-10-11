@@ -1,0 +1,222 @@
+{
+  "$defs": {
+    "BaselineSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "users": {
+          "default": 1,
+          "description": "Virtual users per scenario.",
+          "minimum": 1,
+          "title": "Users",
+          "type": "integer"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "pattern": "^\\s*\\d+(\\.\\d+)?\\s*[smh]\\s*$",
+              "type": "string"
+            }
+          ],
+          "default": 60,
+          "description": "How long to run: seconds, or a duration such as 30s or 5m.",
+          "title": "Duration"
+        },
+        "pacing": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "pattern": "^\\s*\\d+(\\.\\d+)?\\s*[smh]\\s*$",
+              "type": "string"
+            }
+          ],
+          "default": 1,
+          "description": "Seconds from the start of one iteration to the start of the next, per virtual user. 0 sends iterations back to back.",
+          "title": "Pacing"
+        }
+      },
+      "title": "BaselineSettings",
+      "type": "object"
+    },
+    "LimitSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "start_users": {
+          "default": 5,
+          "description": "Virtual users in the first step, across all scenarios.",
+          "minimum": 1,
+          "title": "Start Users",
+          "type": "integer"
+        },
+        "step_users": {
+          "default": 5,
+          "description": "Virtual users added in each further step.",
+          "minimum": 1,
+          "title": "Step Users",
+          "type": "integer"
+        },
+        "max_users": {
+          "default": 100,
+          "description": "Give up looking for the limit beyond this many users.",
+          "minimum": 1,
+          "title": "Max Users",
+          "type": "integer"
+        },
+        "step_duration": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "pattern": "^\\s*\\d+(\\.\\d+)?\\s*[smh]\\s*$",
+              "type": "string"
+            }
+          ],
+          "default": 30,
+          "description": "How long each step runs before it is judged.",
+          "title": "Step Duration"
+        },
+        "pacing": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "pattern": "^\\s*\\d+(\\.\\d+)?\\s*[smh]\\s*$",
+              "type": "string"
+            }
+          ],
+          "default": 1,
+          "description": "Seconds from the start of one iteration to the start of the next, per virtual user. 0 sends iterations back to back.",
+          "title": "Pacing"
+        },
+        "stop_when": {
+          "$ref": "#/$defs/StopWhen",
+          "default": {
+            "error_percent": 5.0,
+            "p95_ms": null
+          },
+          "description": "What counts as having reached the limit."
+        }
+      },
+      "title": "LimitSettings",
+      "type": "object"
+    },
+    "ModeSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "baseline": {
+          "$ref": "#/$defs/BaselineSettings",
+          "default": {
+            "users": 1,
+            "duration": 60.0,
+            "pacing": 1.0
+          },
+          "description": "Steady, light load to measure normal response times."
+        },
+        "limit": {
+          "$ref": "#/$defs/LimitSettings",
+          "default": {
+            "start_users": 5,
+            "step_users": 5,
+            "max_users": 100,
+            "step_duration": 30.0,
+            "pacing": 1.0,
+            "stop_when": {
+              "error_percent": 5.0,
+              "p95_ms": null
+            }
+          },
+          "description": "Load raised in steps until the API fails or slows down."
+        }
+      },
+      "title": "ModeSettings",
+      "type": "object"
+    },
+    "StopWhen": {
+      "additionalProperties": false,
+      "properties": {
+        "error_percent": {
+          "default": 5,
+          "description": "Stop when more than this percentage of a step's requests fail.",
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Error Percent",
+          "type": "number"
+        },
+        "p95_ms": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Stop when a step's 95th percentile response time exceeds this many ms.",
+          "title": "P95 Ms"
+        }
+      },
+      "title": "StopWhen",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "project.yaml in the project folder: settings shared by every scenario. The file is optional.",
+  "properties": {
+    "host": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Base URL of the API, e.g. https://api.example.com. --host overrides it.",
+      "title": "Host"
+    },
+    "vars": {
+      "additionalProperties": true,
+      "default": {},
+      "description": "Values for {{placeholders}} in every scenario. Endpoint, scenario and step vars win.",
+      "title": "Vars",
+      "type": "object"
+    },
+    "modes": {
+      "$ref": "#/$defs/ModeSettings",
+      "default": {
+        "baseline": {
+          "duration": 60.0,
+          "pacing": 1.0,
+          "users": 1
+        },
+        "limit": {
+          "max_users": 100,
+          "pacing": 1.0,
+          "start_users": 5,
+          "step_duration": 30.0,
+          "step_users": 5,
+          "stop_when": {
+            "error_percent": 5.0,
+            "p95_ms": null
+          }
+        }
+      },
+      "description": "Settings for `perfmon run --mode ...`."
+    }
+  },
+  "title": "ProjectFile",
+  "type": "object"
+}

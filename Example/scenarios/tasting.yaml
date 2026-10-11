@@ -1,0 +1,6 @@
+# setup runs once per virtual user: list_beers picks a beer_id, and every iteration fetches that beer.
+# Under load this calls the list once per user instead of once per iteration.
+setup:
+  - list_beers
+steps:
+  - get_beer

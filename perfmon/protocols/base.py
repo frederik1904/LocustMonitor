@@ -35,10 +35,13 @@ class ProtocolHandler(Protocol):
 
     def prepare(self, endpoint: Endpoint, context: Mapping[str, Any]) -> PreparedRequest: ...
 
-    def check(self, endpoint: Endpoint, response: HttpResponse, context: Mapping[str, Any]) -> str | None:
+    def check(
+        self, endpoint: Endpoint, response: HttpResponse, context: Mapping[str, Any], *, check_body: bool
+    ) -> str | None:
         """Return why the response fails the endpoint's `validate` block, or None if it passes.
 
         `context` is the one the request was built from, for placeholders in the expected response.
+        With check_body=False only the status is judged.
         """
         ...
 

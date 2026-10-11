@@ -72,7 +72,7 @@ def test_cli_exit_codes(project: Path, host: str, capsys: pytest.CaptureFixture[
     assert "3 passed, 0 failed, 0 skipped" in capsys.readouterr().out
 
     assert main(["check", "nope", *root]) == 2
-    assert "Unknown scenario(s): nope (available: flow, ok)" in capsys.readouterr().err
+    assert "unknown scenario(s): nope (available: flow, ok)" in capsys.readouterr().err
 
     write(project, "endpoints/ok/meta.yaml", "path: /ok\nvalidate: {status: 201}\n")
     assert main(["check", "ok", *root]) == 1
@@ -97,3 +97,18 @@ def test_check_uses_the_first_data_row(project: Path, host: str):
     write(project, "scenarios/ok.yaml", "steps: [ok]\ndata: data/ids.csv\n")
     outcomes = check_project(load_project(project), host, only=["ok"])
     assert outcomes[0].request == f"GET {host}/ok/8"
+
+
+def test_a_failed_setup_skips_every_step(project: Path, host: str, capsys: pytest.CaptureFixture[str]):
+    write(project, "endpoints/gone/meta.yaml", "path: /gone\n")
+    write(project, "scenarios/flow.yaml", "setup: [gone]\nsteps: [ok, ok]\n")
+    assert main(["check", "flow", "--root", str(project), "--host", host]) == 1
+    out = capsys.readouterr().out
+    assert "SKIP  ok  " in out and "SKIP  ok#2  " in out and "0 passed, 1 failed, 2 skipped" in out
+
+
+def test_host_comes_from_the_project_file_unless_given(project: Path, host: str, capsys: pytest.CaptureFixture[str]):
+    assert main(["check", "ok", "--root", str(project)]) == 2
+    assert "no host; set host in project.yaml or pass --host" in capsys.readouterr().err
+    write(project, "project.yaml", f"host: {host}\n")
+    assert main(["check", "ok", "--root", str(project)]) == 0
