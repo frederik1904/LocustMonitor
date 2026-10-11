@@ -1,0 +1,5 @@
+# The same endpoint twice with different parameters.
+steps:
+  - find_coffee
+  - endpoint: find_coffee
+    vars: { temperature: iced, coffee_id: 1 }

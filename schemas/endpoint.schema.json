@@ -1,0 +1,139 @@
+{
+  "$defs": {
+    "ApiProtocol": {
+      "enum": [
+        "rest"
+      ],
+      "title": "ApiProtocol",
+      "type": "string"
+    },
+    "BodyMatch": {
+      "enum": [
+        "none",
+        "subset",
+        "exact"
+      ],
+      "title": "BodyMatch",
+      "type": "string"
+    },
+    "HttpMethod": {
+      "enum": [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "HEAD",
+        "OPTIONS"
+      ],
+      "title": "HttpMethod",
+      "type": "string"
+    },
+    "ValidationSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Expected HTTP status code.",
+          "title": "Status"
+        },
+        "body": {
+          "$ref": "#/$defs/BodyMatch",
+          "default": "none",
+          "description": "How the response body is compared with the response file: none, subset or exact."
+        }
+      },
+      "title": "ValidationSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "An endpoint's meta.yaml.",
+  "properties": {
+    "path": {
+      "description": "URL path, e.g. /orders/{{order_id}}.",
+      "title": "Path",
+      "type": "string"
+    },
+    "protocol": {
+      "$ref": "#/$defs/ApiProtocol",
+      "default": "rest",
+      "description": "API style of the endpoint."
+    },
+    "method": {
+      "$ref": "#/$defs/HttpMethod",
+      "default": "GET",
+      "description": "HTTP method."
+    },
+    "headers": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {},
+      "description": "Request headers; values may use {{placeholders}}.",
+      "title": "Headers",
+      "type": "object"
+    },
+    "extract": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {},
+      "description": "Values to take from the response for later steps: variable name to JSONPath.",
+      "title": "Extract",
+      "type": "object"
+    },
+    "validate": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ValidationSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Checks on the response. Without it, only connection errors and status >= 400 fail."
+    },
+    "standalone": {
+      "default": true,
+      "description": "Also run this endpoint on its own as a one-step scenario. Set false for building blocks.",
+      "title": "Standalone",
+      "type": "boolean"
+    },
+    "data": {
+      "anyOf": [
+        {
+          "format": "path",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "CSV file with one row of placeholder values per iteration, relative to the project folder. Used when the endpoint runs on its own.",
+      "title": "Data"
+    },
+    "vars": {
+      "additionalProperties": true,
+      "default": {},
+      "description": "Values for {{placeholders}}. The most specific wins: step, then scenario, then endpoint.",
+      "title": "Vars",
+      "type": "object"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "EndpointFile",
+  "type": "object"
+}

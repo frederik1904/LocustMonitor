@@ -1,0 +1,6 @@
+# Removes the coffee that create_coffee added.
+method: DELETE
+path: /coffee/hot/{{coffee_id}}
+standalone: false
+validate:
+  status: 200

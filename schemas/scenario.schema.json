@@ -1,0 +1,80 @@
+{
+  "$defs": {
+    "StepFile": {
+      "additionalProperties": false,
+      "properties": {
+        "endpoint": {
+          "description": "Name of a folder under endpoints/.",
+          "title": "Endpoint",
+          "type": "string"
+        },
+        "vars": {
+          "additionalProperties": true,
+          "default": {},
+          "description": "Values for {{placeholders}}. The most specific wins: step, then scenario, then endpoint.",
+          "title": "Vars",
+          "type": "object"
+        }
+      },
+      "required": [
+        "endpoint"
+      ],
+      "title": "StepFile",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A scenario file: endpoints run in order as one test.",
+  "properties": {
+    "steps": {
+      "description": "Endpoints to call, in order. Each is an endpoint name, or a mapping to override vars.",
+      "items": {
+        "anyOf": [
+          {
+            "type": "string",
+            "description": "Name of a folder under endpoints/."
+          },
+          {
+            "$ref": "#/$defs/StepFile"
+          }
+        ]
+      },
+      "minItems": 1,
+      "title": "Steps",
+      "type": "array"
+    },
+    "weight": {
+      "default": 1,
+      "description": "How often this scenario is picked relative to the others.",
+      "minimum": 1,
+      "title": "Weight",
+      "type": "integer"
+    },
+    "data": {
+      "anyOf": [
+        {
+          "format": "path",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "CSV file with one row of placeholder values per iteration, relative to the project folder. The row is shared by every step.",
+      "title": "Data"
+    },
+    "vars": {
+      "additionalProperties": true,
+      "default": {},
+      "description": "Values for {{placeholders}}. The most specific wins: step, then scenario, then endpoint.",
+      "title": "Vars",
+      "type": "object"
+    }
+  },
+  "required": [
+    "steps"
+  ],
+  "title": "ScenarioFile",
+  "type": "object"
+}

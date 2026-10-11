@@ -1,0 +1,9 @@
+# Creates a coffee from request.json. Only used in coffee_lifecycle, which deletes it again.
+method: POST
+path: /coffee/hot
+standalone: false
+extract:
+  coffee_id: $.id
+validate:
+  status: 201
+  body: subset            # the API echoes the entry back; response.json lists what must match

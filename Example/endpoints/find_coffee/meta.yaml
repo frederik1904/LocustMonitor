@@ -1,0 +1,8 @@
+# A query-string lookup. Only used inside scenarios, so it is not picked up on its own.
+path: /coffee/{{temperature}}?id={{coffee_id}}
+standalone: false
+vars:
+  temperature: hot
+  coffee_id: 2
+validate:
+  status: 200

@@ -1,0 +1,6 @@
+# A variant of an existing endpoint: same get_beer base, different style.
+# It runs alongside get_beer and gets its own line in the statistics.
+data: data/beer_ids.csv
+steps:
+  - endpoint: get_beer
+    vars: { style: stouts }

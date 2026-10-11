@@ -1,0 +1,10 @@
+# Fetches one beer. beer_id comes from the CSV row when run on its own,
+# or from list_beers' extract when run inside browse_beers.
+path: /beers/{{style}}/{{beer_id}}
+data: data/beer_ids.csv
+vars:
+  style: ale
+  beer_id: 1              # fallback until a CSV row or an extract supplies one
+validate:
+  status: 200
+  body: subset            # only the keys in response.json have to match

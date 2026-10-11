@@ -1,0 +1,5 @@
+# List the beers, then open the first one: list_beers extracts beer_id, get_beer uses it.
+weight: 2
+steps:
+  - list_beers
+  - get_beer

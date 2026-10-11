@@ -1,0 +1,7 @@
+{
+  "id": {{coffee_id}},
+  "title": "{{title}}",
+  "description": "Temporary entry created by a test at {{$isotime}}",
+  "ingredients": {{ingredients}},
+  "image": "https://example.com/coffee.png"
+}

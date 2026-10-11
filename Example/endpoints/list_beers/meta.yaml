@@ -1,0 +1,8 @@
+# Lists every beer of one style. Runs on its own and is the first step of browse_beers.
+path: /beers/{{style}}
+vars:
+  style: ale
+extract:
+  beer_id: $[0].id        # the first beer in the list, picked up by get_beer in a chain
+validate:
+  status: 200

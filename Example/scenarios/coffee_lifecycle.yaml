@@ -1,0 +1,9 @@
+# A request with a body: create an entry, then delete it so nothing is left behind.
+# The scenario vars are shared by both steps, so they agree on coffee_id.
+vars:
+  coffee_id: 990001
+  title: Perfmon example
+  ingredients: [Espresso, Steamed milk]
+steps:
+  - create_coffee
+  - delete_coffee

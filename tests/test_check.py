@@ -1,0 +1,85 @@
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+import pytest
+
+from perfmon.cli import main
+from perfmon.config.loader import load_project
+from perfmon.modes.check import check_project
+
+
+class _Api(BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = b"{}"
+        self.send_response(200 if self.path.startswith("/ok") else 404)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture
+def host():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Api)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_port}"
+    server.shutdown()
+
+
+def write(root: Path, relative: str, text: str) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+@pytest.fixture
+def project(tmp_path: Path) -> Path:
+    write(tmp_path, "endpoints/ok/meta.yaml", "path: /ok/{{id}}\nvars: {id: 5}\nvalidate: {status: 200}\n")
+    write(tmp_path, "endpoints/gone/meta.yaml", "path: /gone\nstandalone: false\nvalidate: {status: 404}\n")
+    write(tmp_path, "scenarios/flow.yaml", "steps: [ok, gone]\n")
+    return tmp_path
+
+
+def test_reports_one_outcome_per_step(project: Path, host: str):
+    outcomes = check_project(load_project(project), host)
+    assert [(o.scenario, o.request, o.status, o.failure) for o in outcomes] == [
+        ("flow", f"GET {host}/ok/5", 200, None),
+        ("flow", f"GET {host}/gone", 404, None),
+        ("ok", f"GET {host}/ok/5", 200, None),
+    ]
+    assert all(o.elapsed_ms is not None for o in outcomes)
+
+
+def test_failures_explain_themselves(project: Path, host: str):
+    write(project, "endpoints/gone/meta.yaml", "path: /gone\nstandalone: false\nvalidate: {status: 200}\n")
+    write(project, "endpoints/unchecked/meta.yaml", "path: /missing\n")
+    write(project, "endpoints/broken/meta.yaml", "path: /ok/{{nope}}\n")
+    failures = {o.scenario: o.failure for o in check_project(load_project(project), host) if not o.passed}
+    assert failures["flow"] == "expected status 200, got 404"
+    assert "404" in failures["unchecked"]
+    assert failures["broken"] == "endpoint 'broken' in scenario 'broken': no value for: nope"
+
+
+def test_unreachable_host_is_a_failure_not_a_crash(project: Path):
+    outcomes = check_project(load_project(project), "http://127.0.0.1:9", only=["ok"])
+    assert len(outcomes) == 1 and not outcomes[0].passed and outcomes[0].status is None
+
+
+def test_cli_exit_codes(project: Path, host: str, capsys: pytest.CaptureFixture[str]):
+    root = ["--root", str(project), "--host", host]
+    assert main(["check", *root]) == 0
+    assert "3 passed, 0 failed" in capsys.readouterr().out
+
+    assert main(["check", "nope", *root]) == 2
+    assert "Unknown scenario(s): nope (available: flow, ok)" in capsys.readouterr().err
+
+    write(project, "endpoints/ok/meta.yaml", "path: /ok\nvalidate: {status: 201}\n")
+    assert main(["check", "ok", *root]) == 1
+    assert "FAIL  GET" in capsys.readouterr().out
+
+    write(project, "endpoints/ok/meta.yaml", "pth: /ok\n")
+    assert main(["check", *root]) == 2
+    assert "Configuration error" in capsys.readouterr().err
