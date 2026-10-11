@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from locust import HttpUser
 
+from helpers import write
 from perfmon.config.loader import load_project
 from perfmon.runner import run_scenario
 from perfmon.template import TemplateError
@@ -51,12 +52,6 @@ class RecordingClient:
         return FakeResponse(self.status_code, self.bodies.get(url, {}), self.verdicts)
 
 
-def write(root: Path, relative: str, text: str) -> None:
-    path = root / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
-
-
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
     write(tmp_path, "endpoints/ping/meta.yaml", "path: /ping\n")
@@ -67,7 +62,9 @@ def project(tmp_path: Path) -> Path:
         "vars: {customer: 7, tenant: acme, note: blåbær}\n",
     )
     write(tmp_path, "endpoints/create_order/request.json", '{"note": "{{note}}", "qty": {{qty}}}')
-    write(tmp_path, "scenarios/flow.yaml", "weight: 4\nsteps:\n  - ping\n  - endpoint: create_order\n    vars: {qty: 2}\n")
+    write(
+        tmp_path, "scenarios/flow.yaml", "weight: 4\nsteps:\n  - ping\n  - endpoint: create_order\n    vars: {qty: 2}\n"
+    )
     write(tmp_path, "scenarios/ping.yaml", "steps: [ping]\n")
     write(tmp_path, "scenarios/order.yaml", "steps: [create_order]\n")
     return tmp_path
@@ -123,7 +120,13 @@ def test_status_validation(project: Path, meta: str, status: int, verdicts: list
 @pytest.mark.parametrize(
     ("mode", "expected", "variables", "actual", "verdict"),
     [
-        ("subset", '{"id": {{id}}, "name": "{{name}}"}', "{id: 7, name: IPA}", {"id": 7, "name": "IPA", "x": 1}, "success"),
+        (
+            "subset",
+            '{"id": {{id}}, "name": "{{name}}"}',
+            "{id: 7, name: IPA}",
+            {"id": 7, "name": "IPA", "x": 1},
+            "success",
+        ),
         ("subset", '{"id": {{id}}, "name": "{{name}}"}', "{id: 7, name: null}", {"id": 7, "name": "Stout"}, "success"),
         ("subset", '{"id": {{id}}}', "{id: 7}", {"id": 8}, "body: $.id expected 7, got 8"),
         ("exact", '{"id": {{id}}}', "{id: 7}", {"id": 7}, "success"),
@@ -135,7 +138,11 @@ def test_status_validation(project: Path, meta: str, status: int, verdicts: list
     ],
 )
 def test_body_validation(project: Path, mode: str, expected: str, variables: str, actual, verdict: str):
-    write(project, "endpoints/ping/meta.yaml", f"path: /ping\nvars: {variables}\nvalidate: {{status: 200, body: {mode}}}\n")
+    write(
+        project,
+        "endpoints/ping/meta.yaml",
+        f"path: /ping\nvars: {variables}\nvalidate: {{status: 200, body: {mode}}}\n",
+    )
     write(project, "endpoints/ping/response.json", expected)
     client = RecordingClient(bodies={"/ping": actual})
     run_scenario(load_project(project).scenarios["ping"], client)
@@ -152,7 +159,11 @@ def test_status_is_checked_before_the_body(project: Path):
 
 @pytest.fixture
 def chain(tmp_path: Path) -> Path:
-    write(tmp_path, "endpoints/login/meta.yaml", "method: POST\npath: /login\nextract: {token: $.auth.token, uid: '$.ids[0]'}\n")
+    write(
+        tmp_path,
+        "endpoints/login/meta.yaml",
+        "method: POST\npath: /login\nextract: {token: $.auth.token, uid: '$.ids[0]'}\n",
+    )
     write(tmp_path, "endpoints/login/request.json", '{"user": "{{user}}", "otp": {{otp}}}')
     write(
         tmp_path,

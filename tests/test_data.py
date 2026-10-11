@@ -2,16 +2,11 @@ from pathlib import Path
 
 import pytest
 
+from helpers import write
 from perfmon.config.loader import load_project
 from perfmon.config.models import ConfigError
 from perfmon.data.csv import CsvSource
 from perfmon.data.pool import DataPool
-
-
-def write(root: Path, relative: str, text: str) -> None:
-    path = root / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
 
 
 def take(source, count: int) -> list[str]:

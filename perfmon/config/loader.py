@@ -17,11 +17,7 @@ def load_project(root: str | Path) -> Project:
     if not endpoint_dir.is_dir():
         raise ConfigError(f"{endpoint_dir}: directory not found")
 
-    endpoints = {
-        folder.name: _load_endpoint(folder)
-        for folder in sorted(endpoint_dir.iterdir())
-        if folder.is_dir()
-    }
+    endpoints = {folder.name: _load_endpoint(folder) for folder in sorted(endpoint_dir.iterdir()) if folder.is_dir()}
 
     scenario_dir = root / "scenarios"
     scenarios: dict[str, Scenario] = {}
@@ -46,21 +42,15 @@ def _load_endpoint(folder: Path) -> Endpoint:
     response_file = _find_sibling(folder, "response")
     if meta.validation and meta.validation.body is not BodyMatch.NONE and response_file is None:
         raise ConfigError(
-            f"{meta_path}: validate.body is '{meta.validation.body}' but the folder has no response file to compare with"
+            f"{meta_path}: validate.body is '{meta.validation.body}' "
+            "but the folder has no response file to compare with"
         )
     return Endpoint(
         name=folder.name,
-        path=meta.path,
-        protocol=meta.protocol,
-        method=meta.method,
-        query=meta.query,
-        headers=meta.headers,
-        extract=meta.extract,
-        validation=meta.validation,
+        meta=meta,
         request=_read(request_file),
         request_content_type=mimetypes.guess_type(request_file.name)[0] if request_file else None,
         response=_read(response_file),
-        vars=meta.vars,
     )
 
 
@@ -75,7 +65,7 @@ def _load_scenario(file: Path, root: Path, endpoints: dict[str, Endpoint]) -> Sc
         endpoint = endpoints[step.endpoint]
         name = _step_name(step.name, endpoint.name, {earlier.name for earlier in steps}, file)
         # Most specific wins: endpoint < scenario < step.
-        steps.append(Step(name, endpoint, endpoint.vars | spec.vars | step.vars))
+        steps.append(Step(name, endpoint, endpoint.meta.vars | spec.vars | step.vars))
 
     return Scenario(
         name=file.stem,

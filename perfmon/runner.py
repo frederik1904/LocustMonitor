@@ -45,7 +45,7 @@ def run_scenario(scenario: Scenario, client: HttpClient, row: Mapping[str, Any] 
     extracted: dict[str, Any] = {}
     for index, step in enumerate(scenario.steps):
         endpoint = step.endpoint
-        handler = HANDLERS[endpoint.protocol]
+        handler = HANDLERS[endpoint.meta.protocol]
         # Later sources win: the step's vars, then the data row, then values from earlier responses.
         context = step.vars | dict(row or {}) | extracted
         try:
@@ -77,7 +77,7 @@ def _settle(
     """Mark the response passed or failed and collect its extracted values; True if it passed."""
     if response.status_code == 0:
         return False  # no response arrived; the client reports the connection error itself
-    if endpoint.validation is None:
+    if endpoint.meta.validation is None:
         if response.status_code >= 400:
             return False  # the client's default rule reports it
         failure = None
@@ -86,7 +86,7 @@ def _settle(
             failure = handler.check(endpoint, response, context)
         except TemplateError as error:
             failure = f"response file of '{endpoint.name}': {error}"
-    if failure is None and endpoint.extract:
+    if failure is None and endpoint.meta.extract:
         try:
             extracted.update(handler.extract(endpoint, response))
         except ExtractError as error:

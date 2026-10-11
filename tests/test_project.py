@@ -2,15 +2,10 @@ from pathlib import Path
 
 import pytest
 
+from helpers import write
 from perfmon.cli import main
 from perfmon.config.models import ConfigError
 from perfmon.project import open_project
-
-
-def write(root: Path, relative: str, text: str) -> None:
-    path = root / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
 
 
 @pytest.fixture
@@ -46,7 +41,11 @@ def test_every_missing_value_is_reported_with_its_step(project: Path):
 
 
 def test_an_extract_only_helps_later_steps(project: Path):
-    write(project, "endpoints/login/meta.yaml", "method: POST\npath: /login/{{token}}\nextract: {token: $.token, me: $.user}\n")
+    write(
+        project,
+        "endpoints/login/meta.yaml",
+        "method: POST\npath: /login/{{token}}\nextract: {token: $.token, me: $.user}\n",
+    )
     with pytest.raises(ConfigError, match="step 'login': .* provides {{token}}"):
         open_project(project)
 

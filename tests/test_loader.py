@@ -2,15 +2,10 @@ from pathlib import Path
 
 import pytest
 
+from helpers import write
 from perfmon.config.loader import load_project
 from perfmon.config.models import ConfigError, DataBinding
 from perfmon.config.schema import ApiProtocol, BodyMatch, DataMode, HttpMethod, ValidationSpec
-
-
-def write(root: Path, relative: str, text: str = "") -> None:
-    path = root / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
 
 
 @pytest.fixture
@@ -52,10 +47,10 @@ steps:
 def test_loads_endpoint_files(project: Path):
     endpoints = load_project(project).endpoints
     login, order = endpoints["login"], endpoints["create_order"]
-    assert (login.method, login.path, login.protocol) == (HttpMethod.POST, "/login", ApiProtocol.REST)
+    assert (login.meta.method, login.meta.path, login.meta.protocol) == (HttpMethod.POST, "/login", ApiProtocol.REST)
     assert login.request == '{"user": "{{username}}"}' and login.response is None
-    assert login.extract == {"token": "$.token"} and login.validation is None
-    assert order.validation == ValidationSpec(status=201, body=BodyMatch.SUBSET)
+    assert login.meta.extract == {"token": "$.token"} and login.meta.validation is None
+    assert order.meta.validation == ValidationSpec(status=201, body=BodyMatch.SUBSET)
     assert order.response == '{"id": 1}'
 
 
@@ -79,12 +74,28 @@ def test_step_vars_override_scenario_vars_override_endpoint_vars(project: Path):
         ("endpoints/bad/meta.yaml", "path: /x\nmethdo: GET\n", "methdo: unknown key"),
         ("endpoints/bad/meta.yaml", "method: GET\n", "path: Field required"),
         ("scenarios/bad.yaml", "steps: [login]\ndata: data/nope.csv\n", "data file 'data/nope.csv' not found"),
-        ("endpoints/bad/meta.yaml", "path: /x\nvalidate: {body: fuzzy}\n", "validate.body: Input should be 'none', 'subset' or 'exact'"),
+        (
+            "endpoints/bad/meta.yaml",
+            "path: /x\nvalidate: {body: fuzzy}\n",
+            "validate.body: Input should be 'none', 'subset' or 'exact'",
+        ),
         ("scenarios/bad.yaml", "steps: [logn]\n", "unknown endpoint 'logn'"),
-        ("scenarios/bad.yaml", "steps: [login]\ndata: {file: data/users.csv, mode: sorted}\n", "data.mode: Input should be 'shared', 'scenario' or 'random'"),
-        ("scenarios/bad.yaml", "steps: [login]\ndata: {file: data/users.csv, seed: 1}\n", "seed only applies to mode: random"),
+        (
+            "scenarios/bad.yaml",
+            "steps: [login]\ndata: {file: data/users.csv, mode: sorted}\n",
+            "data.mode: Input should be 'shared', 'scenario' or 'random'",
+        ),
+        (
+            "scenarios/bad.yaml",
+            "steps: [login]\ndata: {file: data/users.csv, seed: 1}\n",
+            "seed only applies to mode: random",
+        ),
         ("scenarios/bad.yaml", "weight: 2\n", "steps: Field required"),
-        ("endpoints/bad/meta.yaml", "path: /x\nvalidate: {body: exact}\n", "validate.body is 'exact' but the folder has no response file"),
+        (
+            "endpoints/bad/meta.yaml",
+            "path: /x\nvalidate: {body: exact}\n",
+            "validate.body is 'exact' but the folder has no response file",
+        ),
         ("scenarios/bad.yaml", "steps: []\n", "steps: List should have at least 1 item"),
         ("endpoints/bad/meta.yaml", "path: /x\nmethod: FETCH\n", "method: Input should be 'GET'"),
         ("endpoints/bad/meta.yaml", "path: /x\nprotocol: soap\n", "protocol: Input should be 'rest'"),
@@ -111,7 +122,7 @@ def test_data_long_form_and_query(project: Path):
     write(project, "endpoints/search/meta.yaml", "path: /search\nquery: {q: '{{term}}', page: 2, debug: null}\n")
     loaded = load_project(project)
     assert loaded.scenarios["order_flow"].data == DataBinding(project / "data/users.csv", DataMode.RANDOM, 3)
-    assert loaded.endpoints["search"].query == {"q": "{{term}}", "page": 2, "debug": None}
+    assert loaded.endpoints["search"].meta.query == {"q": "{{term}}", "page": 2, "debug": None}
 
 
 def test_steps_are_named_after_their_endpoint_and_numbered_when_repeated(project: Path):
@@ -125,7 +136,9 @@ def test_steps_are_named_after_their_endpoint_and_numbered_when_repeated(project
 
 
 def test_two_steps_with_the_same_given_name(project: Path):
-    write(project, "scenarios/order_flow.yaml", "steps:\n  - {endpoint: login, name: a}\n  - {endpoint: login, name: a}\n")
+    write(
+        project, "scenarios/order_flow.yaml", "steps:\n  - {endpoint: login, name: a}\n  - {endpoint: login, name: a}\n"
+    )
     with pytest.raises(ConfigError, match="two steps are named 'a'"):
         load_project(project)
 

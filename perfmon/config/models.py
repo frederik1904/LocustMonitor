@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from perfmon.config.schema import ApiProtocol, DataMode, HttpMethod, ValidationSpec
+from perfmon.config.schema import DataMode, EndpointFile
 
 
 class ConfigError(Exception):
@@ -21,17 +21,10 @@ class DataBinding:
 @dataclass(frozen=True)
 class Endpoint:
     name: str
-    path: str
-    protocol: ApiProtocol
-    method: HttpMethod
-    query: dict[str, Any]
-    headers: dict[str, str]
-    extract: dict[str, str]
-    validation: ValidationSpec | None
+    meta: EndpointFile  # everything written in meta.yaml
     request: str | None
     request_content_type: str | None
     response: str | None
-    vars: dict[str, Any]
 
 
 @dataclass(frozen=True)

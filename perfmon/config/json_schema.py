@@ -15,7 +15,9 @@ def json_schemas() -> dict[str, dict[str, Any]]:
     scenario = ScenarioFile.model_json_schema()
     # The models only see the long forms; the shorthands accepted by the loader are added here.
     steps = scenario["properties"]["steps"]
-    steps["items"] = {"anyOf": [{"type": "string", "description": "Name of a folder under endpoints/."}, steps["items"]]}
+    steps["items"] = {
+        "anyOf": [{"type": "string", "description": "Name of a folder under endpoints/."}, steps["items"]]
+    }
     scenario["properties"]["data"]["anyOf"].insert(0, {"type": "string", "description": "Path to a CSV file."})
     return {ENDPOINT_SCHEMA: endpoint, SCENARIO_SCHEMA: scenario}
 

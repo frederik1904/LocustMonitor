@@ -23,6 +23,8 @@ functional endpoint checks, driven by folders of YAML and request/response files
   - give every new key a `description` in `perfmon/config/schema.py` (it becomes the hover text),
   - regenerate with `uv run perfmon schema` (a test fails when `schemas/` is out of date),
   - add a mapping in `.idea/jsonSchemas.xml` for any new kind of YAML file (e.g. mode settings in step 6).
+- **Before committing, all four must pass:** `uv run pytest`, `uv run ruff check .`,
+  `uv run ruff format --check .` and `uv run pyright`.
 
 ## Status
 
@@ -34,7 +36,7 @@ functional endpoint checks, driven by folders of YAML and request/response files
 | 4 | Chaining (`extract`) and CSV data source | Done |
 | 5 | Response validation (`subset` / `exact`) | Done |
 | 5a | Review fixes: correctness of results | Done |
-| 5b | Review cleanup: code quality | Todo |
+| 5b | Review cleanup: code quality | Done |
 | 6 | Project file, `perfmon run`, `baseline` and `limit` modes | Todo |
 | 7 | Reporter interface and Excel reporter | Todo |
 | 8 | Ergonomics and docs | Todo |
@@ -98,18 +100,17 @@ Found in the code review after step 5.
 - [x] Example: step names in `coffee_break`; a title with quotes in `coffee_lifecycle`.
 - [x] Editor support: description for step `name`; `.yml` patterns in the IntelliJ mapping; schemas regenerated.
 
-### 5b. Review cleanup: code quality
+### 5b. Review cleanup: code quality (done)
 
-Found in the same review. One small commit, no behaviour change.
+Found in the same review. No behaviour change.
 
-- [ ] **One list of endpoint fields.** Adding a key to `meta.yaml` means touching `schema.py`,
-      `models.py` and the field-by-field copy in `loader.py`. Let the resolved `Endpoint` wrap the parsed
-      `EndpointFile` instead of copying it.
-- [ ] **Move the JSON rendering next to the REST handler.** `render_json` and the omit logic are
-      JSON-specific and sit in the general `template.py`; SOAP will need an XML counterpart.
-- [ ] **Set up `ruff` and a type checker** (config in `pyproject.toml`, dev dependencies) and fix what
-      they report; a first `ruff` run showed 15 findings, mostly long lines.
-- [ ] **Share test helpers.** The `write` helper is defined in four test files; move it to `tests/conftest.py`.
+- [x] **One list of endpoint fields.** The resolved `Endpoint` wraps the parsed `EndpointFile` as
+      `endpoint.meta`, so a new `meta.yaml` key is added in `schema.py` only.
+- [x] **JSON rendering moved next to the REST handler** (`perfmon/protocols/json_template.py`);
+      `template.py` keeps the format-neutral parts.
+- [x] **`ruff` (lint and format) and `pyright` are set up** in `pyproject.toml` as dev dependencies; both
+      pass. Long lines are allowed in tests, which hold YAML and JSON snippets as one-line strings.
+- [x] **Shared test helper:** `write` lives in `tests/helpers.py`.
 
 ### 6. Project file, `perfmon run` and modes (load shapes)
 
@@ -226,8 +227,10 @@ Depends on `query:` (step 4) and body validation (step 5).
 - **Editor help comes from generated JSON Schema.** `perfmon schema` exports the pydantic models to
   `schemas/`, and `.idea/jsonSchemas.xml` maps them onto `endpoints/*/meta.yaml` and `scenarios/*.yaml`.
   *Why:* completion, hover docs and validation in IntelliJ from the same source of truth as the loader.
-- **Two layers: "as written" (`schema.py`) and "resolved" (`models.py`).** *Why:* nothing outside `config/`
-  sees raw YAML.
+- **Two layers: "as written" (`schema.py`) and "resolved" (`models.py`).** A resolved `Endpoint` is the
+  parsed `meta.yaml` (`endpoint.meta`) plus its name and the request/response file contents; a resolved
+  scenario has its endpoint names looked up, vars merged and data file located. *Why:* the file format
+  is defined in one place, and nothing outside `config/` sees raw YAML.
 
 ### Architecture
 
@@ -321,6 +324,7 @@ steps:
 
 ```fish
 uv run pytest
+uv run ruff check . && uv run ruff format --check . && uv run pyright
 uv run perfmon check --root Example --host https://api.sampleapis.com
 PERFMON_ROOT=path/to/project uv run locust --headless -u 10 -t 30s --host http://your-api
 ```

@@ -67,7 +67,7 @@ class DataSpec(_FileModel):
     seed: int | None = Field(default=None, description="Makes the shuffle of mode: random repeatable.")
 
     @model_validator(mode="after")
-    def _seed_needs_random(self) -> "DataSpec":
+    def _seed_needs_random(self) -> DataSpec:
         if self.seed is not None and self.mode is not DataMode.RANDOM:
             raise ValueError("seed only applies to mode: random")
         return self

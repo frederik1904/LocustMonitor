@@ -15,7 +15,7 @@ def open_project(root: str | Path) -> Project:
     problems = [
         f"endpoint '{endpoint.name}': {problem}"
         for endpoint in project.endpoints.values()
-        for problem in HANDLERS[endpoint.protocol].lint(endpoint)
+        for problem in HANDLERS[endpoint.meta.protocol].lint(endpoint)
     ]
     for scenario in project.scenarios.values():
         problems.extend(_missing_values(scenario))
@@ -31,17 +31,20 @@ def _missing_values(scenario: Scenario) -> list[str]:
     for step in scenario.steps:
         known = available | step.vars.keys()
         # A dotted name such as {{user.id}} is satisfied by a value called user.
-        missing = sorted(name for name in _needed(step.endpoint) if name not in known and name.split(".")[0] not in known)
+        missing = sorted(
+            name for name in _needed(step.endpoint) if name not in known and name.split(".")[0] not in known
+        )
         if missing:
             names = ", ".join(f"{{{{{name}}}}}" for name in missing)
-            problems.append(
-                f"scenario '{scenario.name}', step '{step.name}': no vars, data column or earlier extract provides {names}"
-            )
-        available |= step.endpoint.extract.keys()
+            where = f"scenario '{scenario.name}', step '{step.name}'"
+            problems.append(f"{where}: no vars, data column or earlier extract provides {names}")
+        available |= step.endpoint.meta.extract.keys()
     return problems
 
 
 def _needed(endpoint: Endpoint) -> set[str]:
-    templates = [endpoint.path, endpoint.request or "", endpoint.response or ""]
-    templates += [value for value in (*endpoint.query.values(), *endpoint.headers.values()) if isinstance(value, str)]
+    templates = [endpoint.meta.path, endpoint.request or "", endpoint.response or ""]
+    templates += [
+        value for value in (*endpoint.meta.query.values(), *endpoint.meta.headers.values()) if isinstance(value, str)
+    ]
     return set().union(*(placeholders(template) for template in templates))

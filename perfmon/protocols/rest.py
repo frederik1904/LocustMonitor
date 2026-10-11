@@ -1,15 +1,17 @@
 import json
 from collections.abc import Mapping
-from functools import lru_cache
+from functools import cache
 from typing import Any
 
-from jsonpath_ng import JSONPath, parse
+from jsonpath_ng import JSONPath
+from jsonpath_ng.parser import parse
 
 from perfmon.config.models import Endpoint
 from perfmon.config.schema import BodyMatch
 from perfmon.protocols.base import ExtractError, HttpResponse, PreparedRequest
 from perfmon.protocols.json_compare import describe_differences
-from perfmon.template import render, render_json, render_mapping
+from perfmon.protocols.json_template import render_json
+from perfmon.template import render, render_mapping
 
 _JSON = "application/json"
 
@@ -17,7 +19,7 @@ _JSON = "application/json"
 class RestHandler:
     def lint(self, endpoint: Endpoint) -> list[str]:
         problems = []
-        for expression in endpoint.extract.values():
+        for expression in endpoint.meta.extract.values():
             try:
                 _compile(expression)
             except ExtractError as error:
@@ -25,7 +27,7 @@ class RestHandler:
         return problems
 
     def prepare(self, endpoint: Endpoint, context: Mapping[str, Any]) -> PreparedRequest:
-        headers = render_mapping(endpoint.headers, context)
+        headers = render_mapping(endpoint.meta.headers, context)
         body = None
         if endpoint.request is not None:
             is_json = endpoint.request_content_type == _JSON
@@ -36,15 +38,15 @@ class RestHandler:
             if endpoint.request_content_type and "content-type" not in declared:
                 headers["Content-Type"] = endpoint.request_content_type
         return PreparedRequest(
-            method=endpoint.method.value,
-            path=render(endpoint.path, context),
-            query=render_mapping(endpoint.query, context),
+            method=endpoint.meta.method.value,
+            path=render(endpoint.meta.path, context),
+            query=render_mapping(endpoint.meta.query, context),
             headers=headers,
             body=body,
         )
 
     def check(self, endpoint: Endpoint, response: HttpResponse, context: Mapping[str, Any]) -> str | None:
-        validation = endpoint.validation
+        validation = endpoint.meta.validation
         if validation is None:
             return None
         if validation.status is not None and response.status_code != validation.status:
@@ -69,7 +71,7 @@ class RestHandler:
         except ValueError as error:
             raise ExtractError("extract: the response is not JSON") from error
         values = {}
-        for name, expression in endpoint.extract.items():
+        for name, expression in endpoint.meta.extract.items():
             matches = _compile(expression).find(document)
             if not matches:
                 raise ExtractError(f"extract '{name}': {expression} matched nothing in the response")
@@ -77,7 +79,7 @@ class RestHandler:
         return values
 
 
-@lru_cache(maxsize=None)
+@cache
 def _compile(expression: str) -> JSONPath:
     try:
         return parse(expression)

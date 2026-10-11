@@ -41,7 +41,7 @@ def _differences(expected: Any, actual: Any, exact: bool, path: str) -> Iterator
             yield f"{path} expected {len(expected)} items, got {len(actual)}"
         elif len(actual) < len(expected):
             yield f"{path} expected at least {len(expected)} items, got {len(actual)}"
-        for index, (wanted, got) in enumerate(zip(expected, actual)):
+        for index, (wanted, got) in enumerate(zip(expected, actual, strict=False)):
             yield from _differences(wanted, got, exact, f"{path}[{index}]")
     # bool is checked separately because in Python True == 1.
     elif isinstance(expected, bool) != isinstance(actual, bool) or expected != actual:

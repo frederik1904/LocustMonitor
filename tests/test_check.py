@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from helpers import write
 from perfmon.cli import main
 from perfmon.config.loader import load_project
 from perfmon.modes.check import check_project
@@ -27,12 +28,6 @@ def host():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{server.server_port}"
     server.shutdown()
-
-
-def write(root: Path, relative: str, text: str) -> None:
-    path = root / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
 
 
 @pytest.fixture
